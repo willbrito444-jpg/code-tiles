@@ -89,8 +89,7 @@
 <script>
 (() => {
   // ---- leaderboard backend (Supabase) ----------------------------------
-  // Fill these in from Supabase > Project Settings > API. Leave empty to run without a shared board.
-  const SUPABASE = { url: '', key: '' };
+  const SUPABASE = { url: 'https://taugktxsoxjvospvugsz.supabase.co', key: 'sb_publishable__j-BvKxt03-gRKuMF0pcHg_hgRg4GxF' };
 
   const cv=document.getElementById('c'), ctx=cv.getContext('2d'), $=id=>document.getElementById(id), field=$('field');
   const LANES=3, COL=['#5cc8ff','#c084fc','#ffa657'], GLYPH=['(','[','{'];
@@ -112,7 +111,7 @@
   let myName=''; try{ myName=localStorage.getItem('codeTilesName')||''; }catch(e){}
   const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let lbTab='day'; try{ lbTab=localStorage.getItem('codeTilesLbTab')||'day'; }catch(e){}
-  const cache={};  // key mode|tab -> {t, rows}
+  const cache={};
   function sinceIso(tab){
     const d=new Date();
     if(tab==='day'){ d.setHours(0,0,0,0); return d.toISOString(); }
@@ -125,7 +124,6 @@
     const s=sinceIso(tab); if(s) q+='&created_at=gte.'+encodeURIComponent(s);
     const r=await fetch(q,{headers:{apikey:SUPABASE.key,Authorization:'Bearer '+SUPABASE.key}});
     if(!r.ok) throw new Error('board '+r.status);
-    // best per player
     const seen=new Map(); for(const row of await r.json()){ if(!seen.has(row.pid)) seen.set(row.pid,row); }
     const rows=[...seen.values()].slice(0,10); cache[k]={t:Date.now(),rows}; return rows;
   }
