@@ -192,11 +192,12 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 .slot { position:relative; overflow:hidden; }
 /* the label sits to the right and bounces the same V as the home mascots */
 .slot .ribbon { position:absolute; right:18px; top:0; bottom:0; z-index:2; white-space:nowrap; pointer-events:none;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
   font-family:'Press Start 2P', 'JetBrains Mono', monospace; line-height:1; letter-spacing:0;
-  animation:ogslash 1.15s infinite alternate; will-change:transform; }
-.slot .ribbon b { font-size:14px; font-weight:400; }
-.slot .ribbon i { font-size:19px; font-style:normal; }
+  animation:ogpulse 1.5s ease-in-out infinite alternate; will-change:transform; }
+.slot .ribbon b { font-size:22px; font-weight:400; }
+.slot .ribbon b.lng { font-size:15px; }
+.slot .ribbon i { font-size:14px; font-style:normal; }
 .rb-og { color:#fffce8;
   text-shadow:2px 0 0 #2a0b3d, -2px 0 0 #2a0b3d, 0 2px 0 #2a0b3d, 0 -2px 0 #2a0b3d,
               2px 2px 0 #2a0b3d, -2px 2px 0 #2a0b3d, 2px -2px 0 #2a0b3d, -2px -2px 0 #2a0b3d,
@@ -205,11 +206,10 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
   text-shadow:2px 0 0 #3d0b0b, -2px 0 0 #3d0b0b, 0 2px 0 #3d0b0b, 0 -2px 0 #3d0b0b,
               2px 2px 0 #3d0b0b, -2px 2px 0 #3d0b0b, 2px -2px 0 #3d0b0b, -2px -2px 0 #3d0b0b,
               0 4px 6px rgba(0,0,0,.55); }
-/* a backslash, not a V: biggest at the top left, smallest at the bottom right */
-@keyframes ogslash {
-  0%   { transform:translate(-6px,-10px) scale(1.2) rotate(-3deg); animation-timing-function:cubic-bezier(.5,0,.85,.4); }
-  68%  { transform:translate(  4px,  6px) scale(.95) rotate(2deg); animation-timing-function:cubic-bezier(.25,.9,.4,1); }
-  100% { transform:translate(  6px, 10px) scale(.88) rotate(3deg); }
+/* it stays put, tilted left, and only breathes */
+@keyframes ogpulse {
+  from { transform:rotate(-7deg) scale(1); }
+  to   { transform:rotate(-7deg) scale(1.18); }
 }
 /* the rainbow fills the whole box; a scrim keeps the name and badges readable */
 .slot.bnr-og { border-color:#9fe9ff; padding-right:116px;
