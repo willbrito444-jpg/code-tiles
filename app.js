@@ -320,7 +320,7 @@ function earnedBanners(st) {
     const s2 = st[m]; if (!s2) return;
     const counts = [s2.c1, s2.c2, s2.c3, s2.c4];
     for (let i = TIERS[m].length - 1; i >= 0; i--) {
-      if (counts[i] > 0) { out.push({ id: 't' + m + i, label: TIERS[m][i][1] + ' ' + MODE_ICON[m] + ' \u00d7' + counts[i] }); break; }
+      if (counts[i] > 0) { out.push({ id: 't' + m + i, label: TIERS[m][i][1] + ' ' + MODE_ICON[m] }); break; }
     }
   });
   if (st[30] && st[30].clean_best >= 130) out.push({ id: 'flawless', label: '\uD83E\uDDCA Flawless' });
