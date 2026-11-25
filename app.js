@@ -216,9 +216,8 @@ function sinceIso(tab) {
 async function fetchBoard(mode, tab) {
   const k = mode + '|' + tab, c = cache[k];
   if (c && Date.now() - c.t < 15000) return c.rows;
-  let q = SUPABASE.url + '/rest/v1/scores?select=username,score,user_id&mode=eq.' + mode + '&order=score.desc,created_at.asc&limit=10';
-  const s = sinceIso(tab); if (s) q += '&created_at=gte.' + encodeURIComponent(s);
-  const r = await fetch(q, { headers: headers() });
+  // one call: the top 100 by player, plus your own row when you are below it
+  const r = await rpc('board_top', { p_mode: mode, p_since: sinceIso(tab) });
   if (!r.ok) throw new Error('board ' + r.status);
   const rows = await r.json(); cache[k] = { t: Date.now(), rows }; return rows;
 }
@@ -234,37 +233,57 @@ function logRun(mode, sc, ms) {
 }
 function LB_HTML(body) {
   const tabs = '<div class="tabs">' + [['day', 'today'], ['week', 'this week'], ['all', 'all time']].map(t => '<button data-tab="' + t[0] + '"' + (lbTab === t[0] ? ' class="on"' : '') + '>' + t[1] + '</button>').join('') + '</div>';
-  return '<div id="lb"><div class="lbt">leaderboard <span>' + DURATION + 's mode</span></div>' + tabs + '<div id="lbbody">' + (body || '') + '</div></div>';
+  return '<div id="lb"><button class="lbt" id="lbopen">leaderboard <span>' + DURATION + 's mode ›</span></button>' + tabs + '<div id="lbbody">' + (body || '') + '</div></div>';
 }
-// where the signed-in player stands among everyone, for the tab on screen
-async function myRank(mode, tab) {
-  if (!me || !token) return null;
-  try {
-    const r = await rpc('my_board_rank', { p_mode: mode, p_since: sinceIso(tab) });
-    if (!r.ok) return null;
-    const rows = await r.json();
-    return rows.length ? rows[0] : null;
-  } catch (e) { return null; }
-}
+const NOSCORES = tab => 'no scores ' + (tab === 'day' ? 'today' : tab === 'week' ? 'this week' : 'yet') + '. be the first!';
 function renderLb() {
   const el = $('lb'); if (!el) return;
   el.outerHTML = LB_HTML('<div class="empty">loading…</div>');
   const req = ++lbReq, mode = DURATION, tab = lbTab;
-  fetchBoard(mode, tab).then(async rows => {
+  fetchBoard(mode, tab).then(rows => {
     if (req !== lbReq) return; const b = $('lbbody'); if (!b) return;
-    b.innerHTML = rows.length
-      ? '<ol>' + rows.map(r => '<li' + (me && r.user_id === me.id ? ' class="me"' : '') + '><span>' + esc((r.username || 'anon').slice(0, 16)) + '</span><b>' + (r.score | 0) + '</b></li>').join('') + '</ol>'
-      : '<div class="empty">no scores ' + (tab === 'day' ? 'today' : tab === 'week' ? 'this week' : 'yet') + '. be the first!</div>';
-    const mine = await myRank(mode, tab);
-    if (req !== lbReq || !mine) return;
-    const b2 = $('lbbody'); if (!b2) return;
-    b2.insertAdjacentHTML('beforeend',
-      (mine.rnk > rows.length ? '<div class="lbgap">⋯</div>' : '') +
-      '<div class="myrank"><span class="rk">#' + mine.rnk + '</span><span class="nm">' + esc(me.username) + '</span><b>' + (mine.best | 0) + '</b></div>');
+    const top = rows.filter(r => r.rnk <= 10), mine = rows.find(r => r.mine);
+    b.innerHTML = (top.length
+      ? '<ol>' + top.map(r => '<li' + (r.mine ? ' class="me"' : '') + '><span>' + esc((r.username || 'anon').slice(0, 16)) + '</span><b>' + (r.best | 0) + '</b></li>').join('') + '</ol>'
+      : '<div class="empty">' + NOSCORES(tab) + '</div>')
+      + (mine && mine.rnk > 10
+        ? '<div class="lbgap">⋯</div><div class="myrank"><span class="rk">#' + mine.rnk + '</span><span class="nm">' + esc(mine.username || '') + '</span><b>' + (mine.best | 0) + '</b></div>'
+        : '');
   }).catch(() => { const b = $('lbbody'); if (b) b.innerHTML = '<div class="empty">couldn\'t load the board</div>'; });
 }
+// the full board: top 100 for one mode and one window, with you pinned under it
+let bsMode = 0, bsTab = '';
+function bbRow(r) {
+  const n = r.rnk, cls = (n === 1 ? 'g' : n === 2 ? 's' : n === 3 ? 'b' : '') + (r.mine ? ' me' : '');
+  return '<li class="' + cls.trim() + '"><span class="rk">#' + n + '</span><span class="nm">' +
+    esc((r.username || 'anon').slice(0, 18)) + '</span><b>' + (r.best | 0) + '</b></li>';
+}
+function boardScreen(mode, tab) {
+  bsMode = mode || bsMode || DURATION; bsTab = tab || bsTab || lbTab;
+  running = false; $('mpbar').style.display = 'none';
+  const modes = [10, 20, 30].map(m => '<button class="ghost fmtbtn' + (bsMode === m ? ' on' : '') + '" data-bm="' + m + '">' + MODE_ICON[m] + ' ' + m + 's</button>').join('');
+  const tabs = [['day', 'today'], ['week', 'this week'], ['all', 'lifetime']].map(t => '<button class="ghost fmtbtn' + (bsTab === t[0] ? ' on' : '') + '" data-bt="' + t[0] + '">' + t[1] + '</button>').join('');
+  show('<h1>Leaderboard</h1><p class="tag">top 100 · one row per player, their best run</p>' +
+    '<div class="row">' + modes + '</div><div class="row">' + tabs + '</div>' +
+    '<div id="bigboard"><div class="waiting">loading…</div></div>' +
+    '<button class="ghost" id="bk">Back</button>', true);
+  $('bk').onclick = home;
+  document.querySelectorAll('[data-bm]').forEach(b => b.onclick = () => boardScreen(+b.dataset.bm, bsTab));
+  document.querySelectorAll('[data-bt]').forEach(b => b.onclick = () => boardScreen(bsMode, b.dataset.bt));
+  const req = ++lbReq, m = bsMode, t = bsTab;
+  fetchBoard(m, t).then(rows => {
+    if (req !== lbReq) return; const el = $('bigboard'); if (!el) return;
+    const top = rows.filter(r => r.rnk <= 100), mine = rows.find(r => r.mine);
+    el.innerHTML = (top.length
+      ? '<ol class="bb">' + top.map(bbRow).join('') + '</ol>'
+      : '<div class="empty">' + NOSCORES(t) + '</div>')
+      + (mine && mine.rnk > 100 ? '<div class="lbgap">⋯</div><ol class="bb pinned">' + bbRow(mine) + '</ol>' : '');
+  }).catch(() => { const el = $('bigboard'); if (el) el.innerHTML = '<div class="empty">couldn\'t load the board</div>'; });
+}
 document.addEventListener('click', e => {
-  const b = e.target.closest && e.target.closest('#lb button[data-tab]');
+  if (!e.target.closest) return;
+  if (e.target.closest('#lbopen')) return boardScreen(DURATION, lbTab);
+  const b = e.target.closest('#lb button[data-tab]');
   if (!b) return; lbTab = b.dataset.tab; ls.set('codeTilesLbTab', lbTab); renderLb(); field.focus();
 });
 
@@ -805,8 +824,14 @@ function soloResult(pb, logging) {
 
 /* ================= MULTIPLAYER ================= */
 // one player's box: banner behind it, badges inside it
+// the ribbon stacks: the word on top, the number under it
+function ribLines(label) {
+  const i = label.indexOf(' ');
+  return i < 0 ? '<b>' + esc(label) + '</b>'
+    : '<b>' + esc(label.slice(0, i)) + '</b><i>' + esc(label.slice(i + 1)) + '</i>';
+}
 function playerCardHTML(name, sk, badges, isMe, ready) {
-  const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + sk.label + '</span>' : '';
+  const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + ribLines(sk.label) + '</span>' : '';
   const bns = (badges || []).map(b => b.band ? wbHTML(b) : '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('');
   return '<div class="slot filled' + (sk && sk.cls !== 'none' ? ' bnr-' + sk.cls : '') + '">' + rib +
     '<div class="nm"><span>' + esc(name) + (isMe ? ' <span class="you">(you)</span>' : '') + '</span>' +
