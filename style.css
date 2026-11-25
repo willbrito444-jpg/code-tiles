@@ -267,7 +267,7 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
   from { transform:scaleY(.88); }
   to   { transform:scaleY(1.12); }
 }
-.slot.bnr-world .ribbon { animation-duration:.42s; }
+.slot.bnr-world .ribbon { animation-duration:.21s; }
 /* the mascots ride the background with the eyes, big enough to read across the box */
 .slot.bnr-world .nm, .slot.bnr-world .bns { position:relative; z-index:1; }
 .mascots { position:absolute; inset:0; border-radius:inherit; overflow:hidden; z-index:0; pointer-events:none; }
