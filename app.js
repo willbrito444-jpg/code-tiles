@@ -349,29 +349,37 @@ const GAMES_TIERS = [[10, 'common'], [100, 'uncommon'], [1000, 'rare']];
 const DUEL_TIERS = [[10, 'common'], [50, 'uncommon'], [250, 'rare']];
 const WORLD_MIN_PLAYERS = 1;
 let myPrevRank = {};
-// a live standing, not a trophy: one badge, your best placing anywhere
-function rankBadge(st, isMe) {
-  let top = null;
+// a live standing, not a trophy: one per mode you place in, best first
+function rankBadges(st, isMe) {
+  const out = [];
   [10, 20, 30].forEach(m => {
     const s = st[m];
     if (!s || !s.rnk || s.rnk > 100 || s.players < WORLD_MIN_PLAYERS) return;
-    if (!top || s.rnk < top.rnk) top = { rnk: s.rnk, mode: m };
+    const n = s.rnk;
+    const band = n === 1 ? 'w1' : n === 2 ? 'w2' : n === 3 ? 'w3' : n <= 10 ? 'w10' : 'w100';
+    const text = n === 1 ? '\ud83d\udc51 WORLD #1' : n <= 3 ? 'WORLD #' + n : n <= 10 ? 'TOP 10' : 'TOP 100';
+    let delta = '';
+    if (isMe) {
+      const prev = myPrevRank[m] || 0;
+      if (prev && prev !== n) delta = n < prev ? ' \u25b2' + (prev - n) : ' \u25bc' + (n - prev);
+    }
+    out.push({ id: 'w' + m, rar: 'world', band: band, rnk: n, mode: m, label: text + ' ' + MODE_ICON[m] + delta });
   });
-  if (!top) return null;
-  const n = top.rnk;
-  const band = n === 1 ? 'w1' : n === 2 ? 'w2' : n === 3 ? 'w3' : n <= 10 ? 'w10' : 'w100';
-  const text = n === 1 ? '\ud83d\udc51 WORLD #1' : n <= 3 ? 'WORLD #' + n : n <= 10 ? 'TOP 10' : 'TOP 100';
-  let delta = '';
-  if (isMe) {
-    const prev = myPrevRank[top.mode] || 0;
-    if (prev && prev !== n) delta = n < prev ? ' \u25b2' + (prev - n) : ' \u25bc' + (n - prev);
-  }
-  return { id: 'w', rar: 'world', band: band, label: text + ' ' + MODE_ICON[top.mode] + delta };
+  return out.sort((a, b) => a.rnk - b.rnk);
+}
+// 'none' hides it; an unset or stale choice falls back to your best placing
+function pickWorld(all, choice) {
+  const ws = all.filter(b => b.rar === 'world');
+  if (choice === 'none') return null;
+  return ws.find(w => w.id === choice) || ws[0] || null;
 }
 const wbHTML = b => '<span class="wb ' + b.band + '"><i class="lv"></i>' + b.label + '</span>';
 // the world badge is status, so it sits outside the three-badge cap
 function pickable(all) { return all.filter(b => b.rar !== 'world'); }
-function visibleBadges(all, shown) { return all.filter(b => b.rar === 'world').concat(pickShown(pickable(all), shown)); }
+function visibleBadges(all, shown, worldChoice) {
+  const w = pickWorld(all, worldChoice);
+  return (w ? [w] : []).concat(pickShown(pickable(all), shown));
+}
 // every banner a player has actually earned, best tier per mode plus specials
 function earnedBanners(st, isMe) {
   if (!st) return [];
@@ -397,7 +405,7 @@ function earnedBanners(st, isMe) {
   if (st[10] && st[10].best >= 62 && st[20] && st[20].best >= 125 && st[30] && st[30].best >= 185) out.push({ id: 'crown', rar: 'epic', label: '👑 Triple crown' });
   // one of the first 100 accounts ever made: numbered, permanent, finite
   if (st.og) out.push({ id: 'og', rar: 'og', label: 'OG #' + st.og });
-  const w = rankBadge(st, isMe); if (w) out.push(w);
+  rankBadges(st, isMe).forEach(w => out.push(w));
   return out.sort((a, b) => RARITY.indexOf(b.rar) - RARITY.indexOf(a.rar));
 }
 // banners dress the whole lobby box; badges are the pills inside it
@@ -418,7 +426,7 @@ function pickShown(all, shown) {
   if (!Array.isArray(shown)) return all.slice(0, 3);
   return shown.map(id => all.find(b => b.id === id)).filter(Boolean).slice(0, 3);
 }
-let myStats = {}, myShown = [], myBanner = 'none';
+let myStats = {}, myShown = [], myBanner = 'none', myWorld = null;
 async function loadMyProfile() {
   if (!me) return;
   const by = await fetchStats([me.id]); myStats = by[me.id] || {};
@@ -428,11 +436,17 @@ async function loadMyProfile() {
     if (cur) ls.set(k, cur);
   });
   try {
-    const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=shown,banner&id=eq.' + me.id, { headers: headers() });
+    const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=shown,banner,world&id=eq.' + me.id, { headers: headers() });
     const rows = r.ok ? await r.json() : [];
     myShown = rows.length ? (rows[0].shown || null) : null;
     myBanner = rows.length && rows[0].banner ? rows[0].banner : 'none';
-  } catch (e) { myShown = null; myBanner = 'none'; }
+    myWorld = rows.length ? rows[0].world : null;
+  } catch (e) { myShown = null; myBanner = 'none'; myWorld = null; }
+}
+async function saveWorld(id) {
+  myWorld = id;
+  await fetch(SUPABASE.url + '/rest/v1/profiles?id=eq.' + me.id, { method: 'PATCH', headers: { ...jhead(), Prefer: 'return=minimal' }, body: JSON.stringify({ world: id }) });
+  invalidateBanners();
 }
 async function saveBanner(id) {
   myBanner = id;
@@ -642,7 +656,11 @@ function friendsScreen() {
 async function profileScreen() {
   show('<h1>Profile</h1><div class="waiting">loading\u2026</div>', true);
   await loadMyProfile();
-  const all = earnedBanners(myStats, true), picks = pickable(all), wb = all.find(b => b.rar === 'world');
+  const all = earnedBanners(myStats, true), picks = pickable(all);
+  const worlds = all.filter(b => b.rar === 'world');
+  const curW = (pickWorld(all, myWorld) || {}).id || 'none';
+  const worldList = worlds.map(w => '<button class="wpick' + (curW === w.id ? ' on' : '') + '" data-w="' + w.id + '">' + wbHTML(w) + '</button>').join('') +
+    '<button class="bnpick small wpick' + (curW === 'none' ? ' on' : '') + '" data-w="none">hide</button>';
   const chosen = pickShown(picks, myShown).map(b => b.id);
   const skins = earnedSkins(myStats), wearing = pickSkin(myStats, myBanner).id;
   const skinList = skins.map(x => '<button class="bnpick skinpick' + (x.cls !== 'none' ? ' rb-' + x.cls : '') + (x.id === wearing ? ' on' : '') + '" data-s="' + x.id + '">' + x.label + '</button>').join('');
@@ -663,7 +681,7 @@ async function profileScreen() {
       '<div class="friends"><h4>PERSONAL BESTS</h4>' + statLine + next + '</div>' +
     '</div><div class="colmain" style="min-width:280px">' +
       '<div class="friends"><h4>BADGES <span style="color:var(--dim);font-weight:500">pick up to 3</span></h4>' +
-      (wb ? '<div class="bnpicks">' + wbHTML(wb) + '</div><div class="empty">your world placing always shows \u2014 it costs you no slot</div>' : '') +
+      (worlds.length ? '<div class="bnpicks">' + worldList + '</div><div id="wsave" class="empty">pick which placing to show \u2014 it costs you no slot</div>' : '') +
       '<div class="bnpicks">' + bannerList + '</div>' +
       '<div id="bsave" class="empty">these show under your username in the lobby</div></div>' +
       '<div class="friends"><h4>BANNER <span style="color:var(--dim);font-weight:500">pick one</span></h4>' +
@@ -672,6 +690,12 @@ async function profileScreen() {
     '</div></div>' +
     '<button class="ghost" id="bk">Back</button>', true);
   $('bk').onclick = home;
+  document.querySelectorAll('.wpick').forEach(b => b.onclick = async () => {
+    document.querySelectorAll('.wpick').forEach(x => x.classList.toggle('on', x === b));
+    $('wsave').innerHTML = '<span class="waiting">saving\u2026</span>';
+    try { await saveWorld(b.dataset.w); $('wsave').innerHTML = '<span class="ok">saved \u2713</span>'; }
+    catch (e) { $('wsave').innerHTML = '<span class="err">could not save</span>'; }
+  });
   document.querySelectorAll('.skinpick').forEach(b => b.onclick = async () => {
     document.querySelectorAll('.skinpick').forEach(x => x.classList.toggle('on', x === b));
     $('ssave').innerHTML = '<span class="waiting">saving\u2026</span>';
@@ -942,12 +966,13 @@ const MP = {
     try {
       const [stats, profs] = await Promise.all([
         fetchStats(ids),
-        fetch(SUPABASE.url + '/rest/v1/profiles?select=id,shown,banner&id=in.(' + ids.join(',') + ')', { headers: headers() }).then(r => r.ok ? r.json() : [])
+        fetch(SUPABASE.url + '/rest/v1/profiles?select=id,shown,banner,world&id=in.(' + ids.join(',') + ')', { headers: headers() }).then(r => r.ok ? r.json() : [])
       ]);
       const shownBy = {}, wearing = {};
-      profs.forEach(p => { shownBy[p.id] = p.shown; wearing[p.id] = p.banner || 'none'; });
+      const worldBy = {};
+      profs.forEach(p => { shownBy[p.id] = p.shown; wearing[p.id] = p.banner || 'none'; worldBy[p.id] = p.world; });
       const out = {}, skins = {};
-      ids.forEach(id => { out[id] = visibleBadges(earnedBanners(stats[id], id === me.id), shownBy[id]); skins[id] = pickSkin(stats[id], wearing[id]); });
+      ids.forEach(id => { out[id] = visibleBadges(earnedBanners(stats[id], id === me.id), shownBy[id], worldBy[id]); skins[id] = pickSkin(stats[id], wearing[id]); });
       this.banners = out; this.skins = skins;
       if (this.phase === 'lobby') this.lobby();
     } catch (e) {}
