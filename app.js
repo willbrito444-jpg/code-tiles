@@ -496,7 +496,12 @@ function bindTopbar() {
     setTimeout(() => { if (b.isConnected) { b.textContent = 'invite a friend'; b.classList.remove('ok'); } }, 1800);
   };
 }
-function refreshTopbar() { const t = $('topbar'); if (t) { t.innerHTML = topbarInner(); bindTopbar(); } }
+function refreshTopbar() {
+  const t = $('topbar'); if (!t) return;
+  const btn = $('invlink');
+  if (btn && btn.classList.contains('ok')) return; // someone joining must not wipe "copied!"
+  t.innerHTML = topbarInner(); bindTopbar();
+}
 let onlineCh = null, invCh = null;
 function startPresence() {
   const c = client(); if (!c || !me) return;
