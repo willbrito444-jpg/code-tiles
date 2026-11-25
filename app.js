@@ -482,7 +482,7 @@ function earnedSkins(st, worldChoice) {
   const ws = rankBadges(st, false);
   if (ws.length) {
     const w = ws.find(x => x.id === worldChoice) || ws[0];
-    out.push({ id: 'world', cls: 'world', mode: w.mode, label: 'WORLD #' + w.rnk });
+    out.push({ id: 'world', cls: 'world', modes: ws.map(x => x.mode).sort((a, b) => a - b), label: 'WORLD #' + w.rnk });
   }
   return out;
 }
@@ -795,12 +795,12 @@ async function profileScreen() {
     try { await saveBanner(b.dataset.s); $('ssave').innerHTML = '<span class="ok">saved \u2713</span>'; }
     catch (e) { $('ssave').innerHTML = '<span class="err">could not save</span>'; }
   });
-  document.querySelectorAll('.bnpick:not(.skinpick)').forEach(b => b.onclick = async () => {
+  document.querySelectorAll('.bnpick[data-b]').forEach(b => b.onclick = async () => {
     const id = b.dataset.b;
-    let list = [...document.querySelectorAll('.bnpick.on:not(.skinpick)')].map(x => x.dataset.b);
+    let list = [...document.querySelectorAll('.bnpick[data-b].on')].map(x => x.dataset.b);
     if (list.includes(id)) list = list.filter(x => x !== id);
     else { if (list.length >= 3) { $('bsave').innerHTML = '<span class="err">three at a time \u2014 unpick one first</span>'; return; } list.push(id); }
-    document.querySelectorAll('.bnpick:not(.skinpick)').forEach(x => x.classList.toggle('on', list.includes(x.dataset.b)));
+    document.querySelectorAll('.bnpick[data-b]').forEach(x => x.classList.toggle('on', list.includes(x.dataset.b)));
     $('bsave').innerHTML = '<span class="waiting">saving\u2026</span>';
     try { await saveShown(list); $('bsave').innerHTML = '<span class="ok">saved \u2713</span>'; }
     catch (e) { $('bsave').innerHTML = '<span class="err">could not save</span>'; }
@@ -828,6 +828,21 @@ function soloResult(pb, logging) {
 
 /* ================= MULTIPLAYER ================= */
 // one player's box: banner behind it, badges inside it
+const MASCOT = { 10: '\uD83C\uDFCE\uFE0F', 20: '\uD83D\uDC07', 30: '\uD83D\uDC22' };
+// share of the cycle each one spends crossing: the car is quick, the turtle is not
+const TRAVEL = { 10: .10, 20: .19, 30: .33 };
+// they cross one at a time with a breather between, then the whole cycle repeats
+function mascotHTML(modes) {
+  if (!modes || !modes.length) return '';
+  const cycle = 7 * modes.length + 4;
+  let at = 0;
+  const els = modes.map(m => {
+    const h = '<i class="ms ms' + m + '" style="animation-duration:' + cycle + 's;animation-delay:' + at.toFixed(2) + 's"><b>' + MASCOT[m] + '</b></i>';
+    at += cycle * TRAVEL[m] + 2.4;
+    return h;
+  }).join('');
+  return '<span class="mascots">' + els + '</span>';
+}
 // the ribbon stacks: the word on top, larger, the number under it.
 // a long word (WORLD) is set smaller, or it outgrows the strip it sits in
 function ribLines(label) {
@@ -839,8 +854,8 @@ function ribLines(label) {
 function playerCardHTML(name, sk, badges, isMe, ready) {
   const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + ribLines(sk.label) + '</span>' : '';
   const bns = (badges || []).map(b => b.band ? wbHTML(b) : '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('');
-  const skin = sk && sk.cls !== 'none' ? ' bnr-' + sk.cls + (sk.mode ? ' wm' + sk.mode : '') : '';
-  return '<div class="slot filled' + skin + '">' + rib +
+  const skin = sk && sk.cls !== 'none' ? ' bnr-' + sk.cls : '';
+  return '<div class="slot filled' + skin + '">' + rib + mascotHTML(sk && sk.modes) +
     '<div class="nm"><span>' + esc(name) + (isMe ? ' <span class="you">(you)</span>' : '') + '</span>' +
     (ready === null ? '' : '<span class="rdy ' + (ready ? 'y' : 'n') + '">' + (ready ? 'READY' : 'not ready') + '</span>') +
     '</div><div class="bns">' + bns + '</div></div>';
