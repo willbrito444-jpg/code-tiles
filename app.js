@@ -539,6 +539,8 @@ function home() {
   show('<h1 class="hero">Code Tiles</h1><div id="mascot"></div>' + MODES_HTML +
     '<p>Hit as many tiles as you can before the clock runs out. Press the key for the <b>lowest</b> tile\'s lane.</p>' +
     '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\u2694 Play a friend</button></div>' +
+    '<p class="tag">Quick 1v1 \u00b7 random opponent \u00b7 best of 3</p>' +
+    '<div class="row">' + [10, 20, 30].map(m => '<button class="ghost qmbtn" data-q="' + m + '">\u2694 ' + m + 's</button>').join('') + '</div>' +
     '<div class="row"><button class="ghost" id="prof">\uD83D\uDC64 Profile</button><button class="ghost" id="frs">\uD83D\uDC65 Friends' +
       (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
     KEYS_HTML() + LB_HTML() +
@@ -546,6 +548,7 @@ function home() {
     'A wrong key <b style="color:#bfe8ff">freezes you</b>: 0.5s / 1s / 1.5s \u00b7 <kbd>Space</kbd> start \u00b7 <kbd>R</kbd> restart \u00b7 <kbd>Esc</kbd> home</p>', true);
   $('go').onclick = () => startRun();
   $('mp').onclick = () => MP.menu();
+  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => MP.quick(+b.dataset.q));
   $('prof').onclick = () => profileScreen();
   $('frs').onclick = () => friendsScreen();
   $('out').onclick = e => { e.preventDefault(); signOut(); };
@@ -635,6 +638,7 @@ const MP = {
 
   get active() { return this.phase === 'countdown' || this.phase === 'playing'; },
   leave() {
+    this.qmStop();
     if (this.ch) { try { this.ch.unsubscribe(); } catch (e) {} this.ch = null; }
     this.phase = 'none'; this.code = ''; this.host = false; this.roster = []; this.chat = []; this.ready = false; this.advancing = false; this.bannerKey = '';
     clearTimeout(this._trackT); this._trackAt = 0;
@@ -660,6 +664,51 @@ const MP = {
     const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let c = ''; for (let i = 0; i < 5; i++) c += letters[Math.floor(Math.random() * letters.length)];
     this.join(c, true);
+  },
+
+  // ---- quick match: queue for a mode, get paired with whoever else is waiting ----
+  async quick(mode) {
+    this.leave(); running = false; $('mpbar').style.display = 'none';
+    if (!client()) { show('<h1>Offline</h1><p>Matchmaking needs the network.</p><button class="ghost" id="bk">Back</button>'); $('bk').onclick = home; return; }
+    this.qmOff = false;
+    show('<h1>Finding a game</h1><p>' + MODE_ICON[mode] + ' ' + mode + 's \u00b7 best of 3</p>' +
+      '<div class="waiting" id="qmst">looking for an opponent\u2026</div>' +
+      '<div class="row"><button class="ghost" id="qmc">Cancel</button></div>', true);
+    $('qmc').onclick = () => { this.qmStop(); this.menu(); };
+    try {
+      const r = await rpc('quick_match', { p_mode: mode });
+      if (this.qmOff) return;
+      const rows = r.ok ? await r.json() : [];
+      const row = rows[0] || {};
+      if (row.code) return this.startQuick(row.code, mode, false);
+      this._queued = true;
+      const st = $('qmst'); if (st) st.textContent = 'waiting for someone to join\u2026';
+      this.qmTick(mode);
+    } catch (e) {
+      const st = $('qmst'); if (st) st.innerHTML = '<span class="err">could not reach matchmaking</span>';
+    }
+  },
+  qmTick(mode) {
+    this._qmT = setTimeout(async () => {
+      if (this.qmOff) return;
+      try {
+        const r = await rpc('quick_poll', {});
+        const rows = r.ok ? await r.json() : [];
+        const code = rows[0] && rows[0].code;
+        if (code) { this._queued = false; return this.startQuick(code, mode, true); }
+      } catch (e) {}
+      this.qmTick(mode);
+    }, 1500);
+  },
+  qmStop() {
+    this.qmOff = true; clearTimeout(this._qmT);
+    if (this._queued) { this._queued = false; try { rpc('quick_cancel', {}); } catch (e) {} }
+  },
+  // whoever was already waiting hosts, so both sides agree without negotiating
+  startQuick(code, mode, isHost) {
+    this.qmStop();
+    this.join(code, isHost);
+    this.cfg = { format: 'shootout', mode: mode, teamSize: 1, rounds: 3, quick: true };
   },
 
   invite(friendId) {
@@ -717,6 +766,10 @@ const MP = {
     this.loadRosterBanners();
     if (this.host && this.phase === 'between' && !this.advancing && this.allReady()) {
       this.advancing = true; this.round++; this.nextRound();
+    }
+    // a quick match has no lobby to sit in: start as soon as the pair is complete
+    if (this.cfg.quick && this.host && this.phase === 'lobby' && !this.advancing && this.roster.length >= 2) {
+      this.advancing = true; this.startMatch();
     }
   },
   teamOf(i) { return i % 2 === 0 ? 'A' : 'B'; },
@@ -820,7 +873,7 @@ const MP = {
   pushCfg() { this.ch.send({ type: 'broadcast', event: 'cfg', payload: this.cfg }); this.lobby(); },
 
   roundMode(r) { return this.cfg.format === 'triathlon' ? [10, 20, 30][r] : this.cfg.mode; },
-  totalRounds() { return this.cfg.format === 'triathlon' ? 3 : 5; },
+  totalRounds() { return this.cfg.format === 'triathlon' ? 3 : (this.cfg.rounds || 5); },
 
   startMatch() { this.round = 0; this.wins = { A: 0, B: 0 }; this.history = []; this.nextRound(); },
   nextRound() {
