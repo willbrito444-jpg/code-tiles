@@ -319,6 +319,11 @@ const TIERS = {
 };
 const MODE_ICON = { 10: '\uD83C\uDFCE\uFE0F', 20: '\uD83D\uDC07', 30: '\uD83D\uDC22' };
 const bannerCache = {};
+// badges and banners are cached hard, so any save has to drop the caches
+function invalidateBanners() {
+  for (const k in bannerCache) delete bannerCache[k];
+  if (typeof MP !== 'undefined' && MP) MP.bannerKey = '';
+}
 async function fetchStats(ids) {
   if (!ids.length) return {};
   const key = ids.slice().sort().join(',');
@@ -381,8 +386,8 @@ function pickSkin(st, id) {
   return all.find(x => x.id === id) || all[0];
 }
 function pickShown(all, shown) {
-  const chosen = (shown || []).map(id => all.find(b => b.id === id)).filter(Boolean);
-  return (chosen.length ? chosen : all).slice(0, 3);
+  if (!Array.isArray(shown)) return all.slice(0, 3);
+  return shown.map(id => all.find(b => b.id === id)).filter(Boolean).slice(0, 3);
 }
 let myStats = {}, myShown = [], myBanner = 'none';
 async function loadMyProfile() {
@@ -391,17 +396,19 @@ async function loadMyProfile() {
   try {
     const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=shown,banner&id=eq.' + me.id, { headers: headers() });
     const rows = r.ok ? await r.json() : [];
-    myShown = rows.length && rows[0].shown ? rows[0].shown : [];
+    myShown = rows.length ? (rows[0].shown || null) : null;
     myBanner = rows.length && rows[0].banner ? rows[0].banner : 'none';
-  } catch (e) { myShown = []; myBanner = 'none'; }
+  } catch (e) { myShown = null; myBanner = 'none'; }
 }
 async function saveBanner(id) {
   myBanner = id;
   await fetch(SUPABASE.url + '/rest/v1/profiles?id=eq.' + me.id, { method: 'PATCH', headers: { ...jhead(), Prefer: 'return=minimal' }, body: JSON.stringify({ banner: id }) });
+  invalidateBanners();
 }
 async function saveShown(list) {
   myShown = list;
   await fetch(SUPABASE.url + '/rest/v1/profiles?id=eq.' + me.id, { method: 'PATCH', headers: { ...jhead(), Prefer: 'return=minimal' }, body: JSON.stringify({ shown: list }) });
+  invalidateBanners();
 }
 async function findId(name) {
   try { const r = await rpc('find_player', { q: name }); const rows = r.ok ? await r.json() : []; return rows.length ? rows[0].id : null; }
@@ -629,7 +636,7 @@ const MP = {
   get active() { return this.phase === 'countdown' || this.phase === 'playing'; },
   leave() {
     if (this.ch) { try { this.ch.unsubscribe(); } catch (e) {} this.ch = null; }
-    this.phase = 'none'; this.code = ''; this.host = false; this.roster = []; this.chat = []; this.ready = false; this.advancing = false;
+    this.phase = 'none'; this.code = ''; this.host = false; this.roster = []; this.chat = []; this.ready = false; this.advancing = false; this.bannerKey = '';
     clearTimeout(this._trackT); this._trackAt = 0;
   },
 
@@ -669,7 +676,7 @@ const MP = {
   join(code, isHost) {
     const c = client(); if (!c) return;
     this.leave();
-    this.code = code; this.host = isHost; this.joinedAt = Date.now(); this.phase = 'lobby'; this.ready = false; this.chat = []; this.advancing = false;
+    this.code = code; this.host = isHost; this.joinedAt = Date.now(); this.phase = 'lobby'; this.ready = false; this.chat = []; this.advancing = false; this.bannerKey = '';
     this.wins = { A: 0, B: 0 }; this.history = []; this.round = 0;
     this.ch = c.channel('lobby-' + code, { config: { presence: { key: me.id }, broadcast: { self: true } } });
     this.ch
@@ -760,7 +767,7 @@ const MP = {
         fetch(SUPABASE.url + '/rest/v1/profiles?select=id,shown,banner&id=in.(' + ids.join(',') + ')', { headers: headers() }).then(r => r.ok ? r.json() : [])
       ]);
       const shownBy = {}, wearing = {};
-      profs.forEach(p => { shownBy[p.id] = p.shown || []; wearing[p.id] = p.banner || 'none'; });
+      profs.forEach(p => { shownBy[p.id] = p.shown; wearing[p.id] = p.banner || 'none'; });
       const out = {}, skins = {};
       ids.forEach(id => { out[id] = pickShown(earnedBanners(stats[id]), shownBy[id]); skins[id] = pickSkin(stats[id], wearing[id]); });
       this.banners = out; this.skins = skins;
