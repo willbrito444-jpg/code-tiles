@@ -136,3 +136,7 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 
 .friends .reqs { border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:5px; padding-bottom:4px; }
 .friends .acc { color:var(--good); border-color:rgba(74,222,128,.45); }
+
+.bnpicks { display:flex; flex-wrap:wrap; gap:5px; padding:3px 0 6px; }
+.bnpick { border-radius:20px; }
+.bnpick.on { background:var(--gold); border-color:var(--gold); color:#06111a; }
