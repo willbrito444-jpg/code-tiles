@@ -122,21 +122,23 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 }
 /* the rainbow fills the whole box; a scrim keeps the name and badges readable */
 .slot.bnr-og { border-color:#9fe9ff; padding-right:104px;
-  background:
-    linear-gradient(90deg, rgba(9,14,21,.93) 0%, rgba(9,14,21,.8) 40%, rgba(9,14,21,.42) 72%, rgba(9,14,21,.3) 100%),
-    linear-gradient(100deg,#ff9ad5 0%,#ffd98a 16%,#a8ff9e 33%,#8ae7ff 50%,#c3a2ff 67%,#ffd98a 84%,#ff9ad5 100%);
-  background-size:100% 100%, 200% 100%;
+  background:linear-gradient(100deg,#ff9ad5 0%,#ffd98a 16%,#a8ff9e 33%,#8ae7ff 50%,#c3a2ff 67%,#ffd98a 84%,#ff9ad5 100%);
+  background-size:200% 100%;
   animation:ogfoilbox 6s linear infinite;
-  box-shadow:0 0 14px rgba(159,233,255,.28), inset 0 0 22px rgba(159,233,255,.12); }
+  box-shadow:0 0 14px rgba(159,233,255,.3); }
+/* dark type on bright foil, the way a holo card does it */
+.slot.bnr-og .nm, .slot.bnr-og .nm span { color:#0b1219; text-shadow:0 1px 0 rgba(255,255,255,.38); }
+.slot.bnr-og .you { color:#6b4300; }
+.slot.bnr-og .rdy { background:rgba(10,16,22,.72); border-color:rgba(10,16,22,.5); color:#eaf2fb; text-shadow:none; }
+.slot.bnr-og .rdy.y { background:rgba(8,46,26,.82); color:#8cf0ae; }
 .slot.bnr-world { border-color:#ff5252; padding-right:104px;
-  background:
-    linear-gradient(90deg, rgba(14,8,9,.93) 0%, rgba(14,8,9,.8) 40%, rgba(14,8,9,.45) 72%, rgba(14,8,9,.32) 100%),
-    linear-gradient(100deg,#8e0e0e 0%,#d42020 20%,#ff6b6b 34%,#d42020 48%,#8e0e0e 70%,#8e0e0e 100%);
-  background-size:100% 100%, 300% 100%;
+  background:linear-gradient(100deg,#7d0c0c 0%,#c41d1d 18%,#ff6b6b 36%,#c41d1d 54%,#7d0c0c 72%,#c41d1d 86%,#7d0c0c 100%);
+  background-size:200% 100%;
   animation:worldfoilbox 3.4s linear infinite;
-  box-shadow:0 0 12px rgba(255,60,60,.26), inset 0 0 22px rgba(255,60,60,.1); }
-@keyframes ogfoilbox { 0% { background-position:0 0, 0% 50%; } 100% { background-position:0 0, -200% 50%; } }
-@keyframes worldfoilbox { 0% { background-position:0 0, 0% 50%; } 100% { background-position:0 0, -300% 50%; } }
+  box-shadow:0 0 12px rgba(255,60,60,.3); }
+.slot.bnr-world .nm, .slot.bnr-world .nm span { text-shadow:0 1px 3px rgba(0,0,0,.75); }
+@keyframes ogfoilbox { 0% { background-position:0% 50%; } 100% { background-position:-200% 50%; } }
+@keyframes worldfoilbox { 0% { background-position:0% 50%; } 100% { background-position:-200% 50%; } }
 .skinpick { font-family:inherit; font-size:11px; position:static; text-shadow:none; border:1px solid transparent; }
 .skinpick.rb-og { color:#08131c;
   background:linear-gradient(100deg,#ff9ad5 0%,#ffd98a 16%,#a8ff9e 32%,#8ae7ff 48%,#c3a2ff 64%,#ff9ad5 82%,#ffd98a 100%);
