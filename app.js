@@ -785,6 +785,8 @@ const MP = {
     this.duelMode = this.duelMode || DURATION || 20;
     this.qmOff = true;
     this.renderDuel('idle');
+    // badges can be stale if a rank moved this session; dfind only exists while still idle
+    loadMyProfile().then(() => { if ($('dfind')) this.renderDuel('idle'); });
   },
   // you on the left, VS, them on the right
   duelSides(state) {
@@ -792,7 +794,7 @@ const MP = {
     const self = inLobby ? this.roster.find(x => x.pid === me.id) : null;
     const left = self
       ? playerCardHTML(self.name, (this.skins || {})[self.pid], (this.banners || {})[self.pid], true, !!self.ready)
-      : playerCardHTML(me.username, pickSkin(myStats, myBanner), pickShown(earnedBanners(myStats), myShown), true, null);
+      : playerCardHTML(me.username, pickSkin(myStats, myBanner), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null);
     const foe = inLobby ? this.roster.find(x => x.pid !== me.id) : null;
     const right = foe
       ? playerCardHTML(foe.name, (this.skins || {})[foe.pid], (this.banners || {})[foe.pid], false, !!foe.ready)
@@ -808,14 +810,15 @@ const MP = {
     else if (state === 'searching') action = '<div class="waiting">waiting for someone to join\u2026</div><div class="row"><button class="ghost" id="dcan">Cancel</button></div>';
     else action = '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready up') + '</button></div>' +
       '<div class="waiting">the duel starts once you are both ready</div>';
-    const main = '<div class="row">' + modes + '</div>' +
-      this.duelSides(state) +
-      (err ? '<div class="err">' + esc(err) + '</div>' : '') + action +
+    // the two boxes stay full width even with the chat alongside, so both banners read properly
+    const head = '<div class="row">' + modes + '</div>';
+    const tail = (err ? '<div class="err">' + esc(err) + '</div>' : '') + action +
       '<button class="ghost" id="bk">' + (state === 'idle' ? 'Back' : 'Leave') + '</button>';
+    const sides = this.duelSides(state);
     show('<h1>1v1</h1><p class="tag">best of 3 \u00b7 random opponent</p>' +
       (state === 'found'
-        ? '<div class="cols"><div class="colmain">' + main + '</div><div class="colside">' + this.CHAT_HTML() + '</div></div>'
-        : main), true);
+        ? sides + '<div class="cols"><div class="colmain">' + head + tail + '</div><div class="colside">' + this.CHAT_HTML() + '</div></div>'
+        : head + sides + tail), true);
     $('bk').onclick = () => { this.qmStop(); this.leave(); home(); };
     document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => { this.duelMode = +b.dataset.dm; this.renderDuel('idle'); });
     const f = $('dfind'); if (f) f.onclick = () => this.search();
