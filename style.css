@@ -84,17 +84,23 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 .slot .bns { display:flex; gap:4px; flex-wrap:wrap; min-height:18px; }
 .bn { font-size:10px; font-weight:800; padding:2px 7px; border-radius:20px; background:#17202b; border:1px solid #2b3440; color:var(--dim); }
 /* rarity: the strip should read as a rarity histogram at a glance */
-.r-common   { background:#1a212b; border-color:#333e4c; color:#9aa7b5; }
-.r-uncommon { background:#1b2733; border-color:#4a6076; color:#cfe0ef; }
-.r-rare     { background:#20212c; border-color:#c9a227; color:#f3d774; box-shadow:0 0 6px rgba(201,162,39,.28); }
-.r-epic     { background:#241c33; border-color:#8c5cf0; color:#d7c4ff; box-shadow:0 0 9px rgba(140,92,240,.4); animation:epicpulse 2.6s ease-in-out infinite; }
-.r-mythic   { border-color:#36e0c8; color:#0a1418; font-weight:900;
-  background:linear-gradient(100deg,#2ad3bd 0%,#7ef0dd 18%,#fff6c9 34%,#7ef0dd 50%,#2ad3bd 68%,#2ad3bd 100%);
+.r-common   { background:#1b212a; border-color:#3a4450; color:#97a2af; }
+.r-uncommon { background:#132419; border-color:#3f9154; color:#7fe39b; }
+.r-rare     { background:#111e30; border-color:#3a7fd5; color:#8ec6ff; box-shadow:0 0 6px rgba(58,127,213,.32); }
+.r-epic     { background:#2b2410; border-color:#e9b63c; color:#ffdf85; box-shadow:0 0 9px rgba(233,182,60,.42); animation:epicpulse 2.6s ease-in-out infinite; }
+.r-mythic   { border-color:#ff5252; color:#fff2f2; font-weight:900; text-shadow:0 1px 2px rgba(0,0,0,.55);
+  background:linear-gradient(100deg,#8e0e0e 0%,#d42020 20%,#ff6b6b 34%,#d42020 48%,#8e0e0e 70%,#8e0e0e 100%);
   background-size:300% 100%; animation:mythshimmer 3.4s linear infinite;
-  box-shadow:0 0 12px rgba(54,224,200,.5); }
-@keyframes epicpulse { 0%,100% { box-shadow:0 0 7px rgba(140,92,240,.3); } 50% { box-shadow:0 0 13px rgba(140,92,240,.6); } }
+  box-shadow:0 0 12px rgba(255,60,60,.55); }
+.r-og       { border-color:#9fe9ff; color:#08131c; font-weight:900; letter-spacing:.4px;
+  background:linear-gradient(100deg,#ff9ad5 0%,#ffd98a 16%,#a8ff9e 32%,#8ae7ff 48%,#c3a2ff 64%,#ff9ad5 82%,#ffd98a 100%);
+  background-size:320% 100%; animation:ogfoil 6s linear infinite;
+  box-shadow:0 0 12px rgba(159,233,255,.5); }
+@keyframes epicpulse { 0%,100% { box-shadow:0 0 7px rgba(233,182,60,.32); } 50% { box-shadow:0 0 14px rgba(233,182,60,.62); } }
 @keyframes mythshimmer { 0% { background-position:0% 50%; } 100% { background-position:-300% 50%; } }
-@media (prefers-reduced-motion: reduce) { .r-epic, .r-mythic { animation:none; } }
+@keyframes ogfoil { 0% { background-position:0% 50%; } 100% { background-position:-320% 50%; } }
+.uc { text-transform:uppercase; }
+@media (prefers-reduced-motion: reduce) { .r-epic, .r-mythic, .r-og { animation:none; } }
 /* your standing, pinned under the top 10 */
 .lbgap { text-align:center; color:#46525f; font-size:13px; letter-spacing:2px; line-height:1; padding:3px 0 1px; }
 .myrank { display:flex; align-items:center; gap:8px; padding:5px 9px; border-radius:8px; margin-top:2px;
@@ -159,4 +165,4 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 
 .bnpicks { display:flex; flex-wrap:wrap; gap:5px; padding:3px 0 6px; }
 .bnpick { border-radius:20px; }
-.bnpick.on { background:var(--gold); border-color:var(--gold); color:#06111a; }
+.bnpick.on { outline:2px solid var(--gold); outline-offset:1px; }
