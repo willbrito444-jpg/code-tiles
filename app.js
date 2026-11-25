@@ -460,6 +460,43 @@ function pingUser(uid, event) {
 }
 
 /* ---------- presence + invites ---------- */
+let ogLeft = null;
+// how many of the first hundred accounts are still unclaimed
+async function loadOgLeft() {
+  try {
+    const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=id', { headers: { ...headers(), Prefer: 'count=exact', Range: '0-0' } });
+    const cr = r.headers.get('content-range') || '';
+    const total = +(cr.split('/')[1] || 0);
+    ogLeft = Math.max(0, 100 - total);
+  } catch (e) { ogLeft = null; }
+}
+function topbarInner() {
+  const n = online.size || 1;
+  return '<span class="onl"><i></i>' + n + ' player' + (n === 1 ? '' : 's') + ' online</span>' +
+    (ogLeft === null ? '' : '<span class="ogleft">' + (ogLeft > 0
+      ? ogLeft + ' OG banner' + (ogLeft === 1 ? '' : 's') + ' left'
+      : 'OG banners all claimed') + '</span>') +
+    '<button class="inv" id="invlink">invite a friend</button>';
+}
+function bindTopbar() {
+  const b = $('invlink'); if (!b) return;
+  b.onclick = async () => {
+    const url = location.origin + location.pathname;
+    let ok = true;
+    try { await navigator.clipboard.writeText(url); }
+    catch (e) {
+      const t = document.createElement('textarea');
+      t.value = url; t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t); t.select();
+      try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+      t.remove();
+    }
+    b.textContent = ok ? 'copied!' : url;
+    b.classList.toggle('ok', ok);
+    setTimeout(() => { if (b.isConnected) { b.textContent = 'invite a friend'; b.classList.remove('ok'); } }, 1800);
+  };
+}
+function refreshTopbar() { const t = $('topbar'); if (t) { t.innerHTML = topbarInner(); bindTopbar(); } }
 let onlineCh = null, invCh = null;
 function startPresence() {
   const c = client(); if (!c || !me) return;
@@ -467,7 +504,7 @@ function startPresence() {
   onlineCh = c.channel('online', { config: { presence: { key: me.id } } });
   onlineCh.on('presence', { event: 'sync' }, () => {
     online = new Set(Object.keys(onlineCh.presenceState()));
-    refreshFriends(!!MP.code);
+    refreshFriends(!!MP.code); refreshTopbar();
   }).subscribe(s => { if (s === 'SUBSCRIBED') onlineCh.track({ id: me.id, name: me.username }); });
   if (invCh) { try { invCh.unsubscribe(); } catch (e) {} }
   invCh = c.channel('inv-' + me.id);
@@ -570,7 +607,8 @@ async function signOut() {
 function home() {
   MP.leave(); running = false; started = false; freeze = 0; frozenTotal = 0; offset = 0; tiles = []; score = 0; timeLeft = DURATION;
   $('mpbar').style.display = 'none';
-  show('<h1 class="hero">Code Tiles</h1><div id="mascot"></div>' + MODES_HTML +
+  show('<div id="topbar">' + topbarInner() + '</div>' +
+    '<h1 class="hero">Code Tiles</h1><div id="mascot"></div>' + MODES_HTML +
     '<p>Hit as many tiles as you can before the clock runs out. Press the key for the <b>lowest</b> tile\'s lane.</p>' +
     '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\u2694 Play a friend</button></div>' +
     '<div class="row"><button class="ghost" id="duel">\u2694 1v1</button></div>' +
@@ -585,7 +623,8 @@ function home() {
   $('prof').onclick = () => profileScreen();
   $('frs').onclick = () => friendsScreen();
   $('out').onclick = e => { e.preventDefault(); signOut(); };
-  bindModes(); bindKeys(); setMode(DURATION); hud(); draw();
+  bindModes(); bindKeys(); bindTopbar(); setMode(DURATION); hud(); draw();
+  loadOgLeft().then(refreshTopbar);
 }
 
 function friendsScreen() {
