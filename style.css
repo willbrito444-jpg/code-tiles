@@ -101,6 +101,24 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 @keyframes ogfoil { 0% { background-position:0% 50%; } 100% { background-position:-320% 50%; } }
 .uc { text-transform:uppercase; }
 
+/* ---- 1v1 duel screen ---- */
+.duel { display:flex; align-items:center; justify-content:center; gap:12px; margin:12px 0 6px; }
+.duel .dside { flex:1 1 0; min-width:0; max-width:290px; }
+.duel .dside .slot { margin-bottom:0; min-height:86px; }
+.vs { flex:0 0 auto; font-family:'Press Start 2P','JetBrains Mono',monospace; font-size:24px; line-height:1;
+  background:linear-gradient(165deg,#ff6a00 0%,#ff8c1a 28%,#ffb627 55%,#ffd93b 78%,#fff07a 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  filter:drop-shadow(0 2px 5px rgba(0,0,0,.7)); }
+.slot.empty.searching { animation:searchpulse 1.3s ease-in-out infinite; }
+@keyframes searchpulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+@media (max-width: 620px) {
+  .duel { flex-direction:column; gap:6px; }
+  .duel .dside { max-width:100%; width:100%; }
+  .vs { font-size:18px; }
+}
+@media (prefers-reduced-motion: reduce) { .slot.empty.searching { animation:none; } }
+
+
 /* ---- banners: the whole lobby box, worn one at a time ---- */
 .slot { position:relative; overflow:hidden; }
 /* the label sits to the right and bounces the same V as the home mascots */
