@@ -599,7 +599,8 @@ const MP = {
   get active() { return this.phase === 'countdown' || this.phase === 'playing'; },
   leave() {
     if (this.ch) { try { this.ch.unsubscribe(); } catch (e) {} this.ch = null; }
-    this.phase = 'none'; this.code = ''; this.host = false; this.roster = []; this.chat = []; this.ready = false;
+    this.phase = 'none'; this.code = ''; this.host = false; this.roster = []; this.chat = []; this.ready = false; this.advancing = false;
+    clearTimeout(this._trackT); this._trackAt = 0;
   },
 
   menu() {
@@ -638,7 +639,7 @@ const MP = {
   join(code, isHost) {
     const c = client(); if (!c) return;
     this.leave();
-    this.code = code; this.host = isHost; this.joinedAt = Date.now(); this.phase = 'lobby'; this.ready = false; this.chat = [];
+    this.code = code; this.host = isHost; this.joinedAt = Date.now(); this.phase = 'lobby'; this.ready = false; this.chat = []; this.advancing = false;
     this.wins = { A: 0, B: 0 }; this.history = []; this.round = 0;
     this.ch = c.channel('lobby-' + code, { config: { presence: { key: me.id }, broadcast: { self: true } } });
     this.ch
@@ -657,7 +658,14 @@ const MP = {
         }
       });
   },
-  track() { if (this.ch) return this.ch.track({ pid: me.id, name: me.username, at: this.joinedAt, host: this.host, ready: this.ready }); },
+  _payload() { return { pid: me.id, name: me.username, at: this.joinedAt, host: this.host, ready: this.ready }; },
+  track() {
+    if (!this.ch) return;
+    const now = Date.now(), gap = now - (this._trackAt || 0);
+    clearTimeout(this._trackT);
+    if (gap >= 250) { this._trackAt = now; return this.ch.track(this._payload()); }
+    this._trackT = setTimeout(() => { if (!this.ch) return; this._trackAt = Date.now(); this.ch.track(this._payload()); }, 250 - gap);
+  },
   setReady(v) { this.ready = v; this.track(); this.repaint(); },
 
   syncRoster() {
@@ -670,7 +678,9 @@ const MP = {
     this.myTeam = i < 0 ? 'A' : (i % 2 === 0 ? 'A' : 'B');
     this.repaint();
     this.loadRosterBanners();
-    if (this.host && this.phase === 'between' && this.allReady()) { this.round++; this.nextRound(); }
+    if (this.host && this.phase === 'between' && !this.advancing && this.allReady()) {
+      this.advancing = true; this.round++; this.nextRound();
+    }
   },
   teamOf(i) { return i % 2 === 0 ? 'A' : 'B'; },
   teamMembers(t) { return this.roster.filter((p, i) => this.teamOf(i) === t); },
@@ -778,6 +788,7 @@ const MP = {
     this.ch.send({ type: 'broadcast', event: 'start', payload: { round: this.round, mode: this.roundMode(this.round), seed: (Math.random() * 1e9) | 0, wins: this.wins, history: this.history } });
   },
   onStart(p) {
+    this.advancing = false;
     this.phase = 'countdown'; this.round = p.round; this.wins = p.wins || { A: 0, B: 0 }; this.history = p.history || [];
     this.roundScores = {}; this.ready = false; this.track();
     setMode(p.mode); this.bar(); audioOn();
