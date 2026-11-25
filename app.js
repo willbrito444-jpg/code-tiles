@@ -7,7 +7,7 @@ const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d'), field = $('field'), msg = $('msg');
 const LANES = 3, COL = ['#5cc8ff', '#c084fc', '#ffa657'], GLYPH = ['(', '[', '{'];
 const FREEZE_BY_MODE = { 10: .5, 20: 1, 30: 1.5 }, TILE_H = 100, SLIDE_SPEED = 1000;
-const LOG_MIN = { 10: 20, 20: 40, 30: 60 };
+const LOG_MIN = { 10: 1, 20: 1, 30: 1 };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
 
@@ -188,14 +188,32 @@ function LB_HTML(body) {
   const tabs = '<div class="tabs">' + [['day', 'today'], ['week', 'this week'], ['all', 'all time']].map(t => '<button data-tab="' + t[0] + '"' + (lbTab === t[0] ? ' class="on"' : '') + '>' + t[1] + '</button>').join('') + '</div>';
   return '<div id="lb"><div class="lbt">leaderboard <span>' + DURATION + 's mode</span></div>' + tabs + '<div id="lbbody">' + (body || '') + '</div></div>';
 }
+// where the signed-in player stands among everyone, for the tab on screen
+async function myRank(mode, tab) {
+  if (!me || !token) return null;
+  try {
+    const r = await rpc('my_board_rank', { p_mode: mode, p_since: sinceIso(tab) });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return rows.length ? rows[0] : null;
+  } catch (e) { return null; }
+}
 function renderLb() {
   const el = $('lb'); if (!el) return;
-  el.outerHTML = LB_HTML('<div class="empty">loading\u2026</div>');
+  el.outerHTML = LB_HTML('<div class="empty">loading…</div>');
   const req = ++lbReq, mode = DURATION, tab = lbTab;
-  fetchBoard(mode, tab).then(rows => {
+  fetchBoard(mode, tab).then(async rows => {
     if (req !== lbReq) return; const b = $('lbbody'); if (!b) return;
-    if (!rows.length) { b.innerHTML = '<div class="empty">no scores ' + (tab === 'day' ? 'today' : tab === 'week' ? 'this week' : 'yet') + '. be the first!</div>'; return; }
-    b.innerHTML = '<ol>' + rows.map(r => '<li' + (me && r.user_id === me.id ? ' class="me"' : '') + '><span>' + esc((r.name || 'anon').slice(0, 16)) + '</span><b>' + (r.score | 0) + '</b></li>').join('') + '</ol>';
+    b.innerHTML = rows.length
+      ? '<ol>' + rows.map(r => '<li' + (me && r.user_id === me.id ? ' class="me"' : '') + '><span>' + esc((r.name || 'anon').slice(0, 16)) + '</span><b>' + (r.score | 0) + '</b></li>').join('') + '</ol>'
+      : '<div class="empty">no scores ' + (tab === 'day' ? 'today' : tab === 'week' ? 'this week' : 'yet') + '. be the first!</div>';
+    const mine = await myRank(mode, tab);
+    if (req !== lbReq || !mine) return;
+    const b2 = $('lbbody'); if (!b2) return;
+    b2.insertAdjacentHTML('beforeend',
+      (mine.rnk > rows.length ? '<div class="lbgap">⋯</div>' : '') +
+      '<div class="myrank"><span class="rk">#' + mine.rnk + '</span><span class="nm">' + esc(me.username) + '</span><b>' + (mine.best | 0) + '</b></div>' +
+      '<div class="rankof">of ' + mine.players + ' player' + (+mine.players === 1 ? '' : 's') + '</div>');
   }).catch(() => { const b = $('lbbody'); if (b) b.innerHTML = '<div class="empty">couldn\'t load the board</div>'; });
 }
 document.addEventListener('click', e => {
@@ -313,20 +331,34 @@ async function fetchStats(ids) {
   bannerCache[key] = { t: Date.now(), v: by };
   return by;
 }
+// rarity, rarest last — the sort below puts the rarest banner first
+const RARITY = ['common', 'uncommon', 'rare', 'epic', 'mythic'];
+const TIER_RARITY = ['common', 'uncommon', 'rare', 'epic'];
+const GAMES_TIERS = [[10, 'common'], [100, 'uncommon'], [1000, 'rare']];
+const WORLD_MIN_PLAYERS = 10;
+// every banner a player has actually earned, best tier per mode plus specials
 function earnedBanners(st) {
   if (!st) return [];
   const out = [];
+  let games = 0;
   [10, 20, 30].forEach(m => {
-    const s2 = st[m]; if (!s2) return;
-    const counts = [s2.c1, s2.c2, s2.c3, s2.c4];
+    const s = st[m]; if (!s) return;
+    games += (s.games | 0);
+    const counts = [s.c1, s.c2, s.c3, s.c4];
     for (let i = TIERS[m].length - 1; i >= 0; i--) {
-      if (counts[i] > 0) { out.push({ id: 't' + m + i, label: s.best + ' ' + MODE_ICON[m] }); break; }
+      if (counts[i] > 0) { out.push({ id: 't' + m + i, rar: TIER_RARITY[i], label: s.best + ' ' + MODE_ICON[m] }); break; }
     }
+    // a world placing is a standing among players, not a row on the board,
+    // and it stays dark until there is a real field to place in
+    if (s.rnk && s.rnk <= 100 && s.players >= WORLD_MIN_PLAYERS) out.push({ id: 'w' + m, rar: 'mythic', rnk: s.rnk, label: 'world #' + s.rnk + ' ' + MODE_ICON[m] });
   });
-  if (st[30] && st[30].clean_best >= 130) out.push({ id: 'flawless', label: '\uD83E\uDDCA Flawless' });
-  if (st[20] && st[20].clean_best >= 125) out.push({ id: 'untouch', label: '\uD83D\uDC8E Untouchable' });
-  if (st[10] && st[10].best >= 62 && st[20] && st[20].best >= 125 && st[30] && st[30].best >= 185) out.push({ id: 'crown', label: '\uD83D\uDC51 Triple crown' });
-  return out;
+  for (let i = GAMES_TIERS.length - 1; i >= 0; i--) {
+    if (games >= GAMES_TIERS[i][0]) { out.push({ id: 'g' + i, rar: GAMES_TIERS[i][1], label: GAMES_TIERS[i][0] + ' games 🎮' }); break; }
+  }
+  if (st[30] && st[30].clean_best >= 130) out.push({ id: 'flawless', rar: 'common', label: '🧊 Flawless' });
+  if (st[20] && st[20].clean_best >= 125) out.push({ id: 'untouch', rar: 'epic', label: '💎 Untouchable' });
+  if (st[10] && st[10].best >= 62 && st[20] && st[20].best >= 125 && st[30] && st[30].best >= 185) out.push({ id: 'crown', rar: 'epic', label: '👑 Triple crown' });
+  return out.sort((a, b) => RARITY.indexOf(b.rar) - RARITY.indexOf(a.rar));
 }
 function pickShown(all, shown) {
   const chosen = (shown || []).map(id => all.find(b => b.id === id)).filter(Boolean);
@@ -508,7 +540,7 @@ async function profileScreen() {
     return nx ? '<div class="empty">' + MODE_ICON[m] + ' next: <b>' + nx[1] + '</b> for ' + nx[0] + '</div>' : '<div class="empty">' + MODE_ICON[m] + ' every tier cleared</div>';
   }).join('');
   const bannerList = all.length
-    ? all.map(b => '<button class="bnpick small' + (chosen.includes(b.id) ? ' on' : '') + '" data-b="' + b.id + '">' + b.label + '</button>').join('')
+    ? all.map(b => '<button class="bnpick small r-' + b.rar + (chosen.includes(b.id) ? ' on' : '') + '" data-b="' + b.id + '">' + b.label + '</button>').join('')
     : '<div class="empty">no banners yet \u2014 they unlock from your scores</div>';
   show('<h1>Profile</h1><h2>' + esc(me.username) + '</h2>' +
     '<div class="cols" style="max-width:660px"><div class="colmain" style="min-width:280px">' +
@@ -537,7 +569,7 @@ function soloResult(pb, logging) {
   show('<h1>' + (pb ? 'New PB!' : 'Time!') + '</h1><div class="big">' + score + '</div>' +
     '<p>tiles in ' + DURATION + ' s \u00b7 ' + (score / DURATION).toFixed(1) + ' per second \u00b7 best ' + best +
     (frozenTotal > 0 ? '<br>projected without the ' + frozenTotal.toFixed(1) + ' s frozen: <b>' + (projected() || score) + '</b>' : '') + '</p>' +
-    '<div id="logst" class="waiting">' + (worth ? 'logging\u2026' : 'too low to log (' + LOG_MIN[DURATION] + '+ gets a place)') + '</div>' +
+    '<div id="logst" class="waiting">' + (worth ? 'logging\u2026' : 'no tiles hit — nothing to log') + '</div>' +
     LB_HTML() + MODES_HTML +
     '<div class="row"><button class="primary" id="go">Again</button><button class="ghost" id="mp">\u2694 Play a friend</button></div>' +
     '<p><kbd>Space</kbd> again \u00b7 <kbd>Esc</kbd> home</p>');
@@ -691,7 +723,7 @@ const MP = {
     const mem = this.teamMembers(t); let h = '';
     for (let i = 0; i < n; i++) {
       const p = mem[i];
-      const bns = p && this.banners[p.pid] ? this.banners[p.pid].map(b => '<span class="bn">' + b.label + '</span>').join('') : '';
+      const bns = p && this.banners[p.pid] ? this.banners[p.pid].map(b => '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('') : '';
       h += p
         ? '<div class="slot filled"><div class="nm"><span>' + esc(p.name) + (p.pid === me.id ? ' <span class="you">(you)</span>' : '') + '</span>' +
           '<span class="rdy ' + (p.ready ? 'y' : 'n') + '">' + (p.ready ? 'READY' : 'not ready') + '</span></div>' +
