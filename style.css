@@ -83,6 +83,26 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 .slot.empty { color:var(--dim); font-style:italic; align-items:center; justify-content:center; border-style:dashed; }
 .slot .bns { display:flex; gap:4px; flex-wrap:wrap; min-height:18px; }
 .bn { font-size:10px; font-weight:800; padding:2px 7px; border-radius:20px; background:#17202b; border:1px solid #2b3440; color:var(--dim); }
+/* rarity: the strip should read as a rarity histogram at a glance */
+.r-common   { background:#1a212b; border-color:#333e4c; color:#9aa7b5; }
+.r-uncommon { background:#1b2733; border-color:#4a6076; color:#cfe0ef; }
+.r-rare     { background:#20212c; border-color:#c9a227; color:#f3d774; box-shadow:0 0 6px rgba(201,162,39,.28); }
+.r-epic     { background:#241c33; border-color:#8c5cf0; color:#d7c4ff; box-shadow:0 0 9px rgba(140,92,240,.4); animation:epicpulse 2.6s ease-in-out infinite; }
+.r-mythic   { border-color:#36e0c8; color:#0a1418; font-weight:900;
+  background:linear-gradient(100deg,#2ad3bd 0%,#7ef0dd 18%,#fff6c9 34%,#7ef0dd 50%,#2ad3bd 68%,#2ad3bd 100%);
+  background-size:300% 100%; animation:mythshimmer 3.4s linear infinite;
+  box-shadow:0 0 12px rgba(54,224,200,.5); }
+@keyframes epicpulse { 0%,100% { box-shadow:0 0 7px rgba(140,92,240,.3); } 50% { box-shadow:0 0 13px rgba(140,92,240,.6); } }
+@keyframes mythshimmer { 0% { background-position:0% 50%; } 100% { background-position:-300% 50%; } }
+@media (prefers-reduced-motion: reduce) { .r-epic, .r-mythic { animation:none; } }
+/* your standing, pinned under the top 10 */
+.lbgap { text-align:center; color:#46525f; font-size:13px; letter-spacing:2px; line-height:1; padding:3px 0 1px; }
+.myrank { display:flex; align-items:center; gap:8px; padding:5px 9px; border-radius:8px; margin-top:2px;
+  background:#16202c; border:1px solid #2f506b; }
+.myrank .rk { font-weight:800; font-size:11px; color:#6fb2e8; min-width:34px; }
+.myrank .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.myrank b { font-variant-numeric:tabular-nums; }
+.rankof { text-align:right; font-size:10px; color:var(--dim); padding:2px 3px 0 0; }
 .rdy { font-size:10px; font-weight:800; padding:2px 8px; border-radius:20px; }
 .rdy.y { background:rgba(74,222,128,.15); color:var(--good); border:1px solid rgba(74,222,128,.4); }
 .rdy.n { background:rgba(107,118,132,.12); color:var(--dim); border:1px solid #2b3440; }
