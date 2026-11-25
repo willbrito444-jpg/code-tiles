@@ -574,7 +574,7 @@ async function profileScreen() {
     '<div class="cols" style="max-width:660px"><div class="colmain" style="min-width:280px">' +
       '<div class="friends"><h4>PERSONAL BESTS</h4>' + statLine + next + '</div>' +
     '</div><div class="colmain" style="min-width:280px">' +
-      '<div class="friends"><h4>BANNERS <span style="color:var(--dim);font-weight:500">pick up to 3</span></h4>' +
+      '<div class="friends"><h4>BADGES <span style="color:var(--dim);font-weight:500">pick up to 3</span></h4>' +
       '<div class="bnpicks">' + bannerList + '</div>' +
       '<div id="bsave" class="empty">these show under your username in the lobby</div></div>' +
       '<div class="friends"><h4>BANNER <span style="color:var(--dim);font-weight:500">pick one</span></h4>' +
