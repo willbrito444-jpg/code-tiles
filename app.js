@@ -474,17 +474,21 @@ function earnedBanners(st, isMe) {
   return out.sort((a, b) => RARITY.indexOf(b.rar) - RARITY.indexOf(a.rar));
 }
 // banners dress the whole lobby box; badges are the pills inside it
-function earnedSkins(st) {
+function earnedSkins(st, worldChoice) {
   const out = [{ id: 'none', cls: 'none', label: 'Plain' }];
   if (!st) return out;
   if (st.og) out.push({ id: 'og', cls: 'og', label: 'OG #' + st.og });
-  const ranks = [10, 20, 30].map(m => st[m] && st[m].players >= WORLD_MIN_PLAYERS && st[m].rnk <= 100 ? st[m].rnk : 0).filter(Boolean);
-  if (ranks.length) out.push({ id: 'world', cls: 'world', label: 'WORLD #' + Math.min.apply(null, ranks) });
+  // the banner follows the placing you chose to wear, so the mascot matches it
+  const ws = rankBadges(st, false);
+  if (ws.length) {
+    const w = ws.find(x => x.id === worldChoice) || ws[0];
+    out.push({ id: 'world', cls: 'world', mode: w.mode, label: 'WORLD #' + w.rnk });
+  }
   return out;
 }
 // only ever wear a banner you have actually earned
-function pickSkin(st, id) {
-  const all = earnedSkins(st);
+function pickSkin(st, id, worldChoice) {
+  const all = earnedSkins(st, worldChoice);
   return all.find(x => x.id === id) || all[0];
 }
 function pickShown(all, shown) {
@@ -717,7 +721,7 @@ function home() {
 
 // the home card is your lobby box exactly as others see it, minus the "(you)"
 function meCardHTML() {
-  return playerCardHTML(me ? me.username : '', pickSkin(myStats, myBanner),
+  return playerCardHTML(me ? me.username : '', pickSkin(myStats, myBanner, myWorld),
     visibleBadges(earnedBanners(myStats, true), myShown, myWorld), false, null) +
     '<div class="hint">tap to customise</div>';
 }
@@ -751,7 +755,7 @@ async function profileScreen() {
   const worldList = worlds.map(w => '<button class="wpick' + (curW === w.id ? ' on' : '') + '" data-w="' + w.id + '">' + wbHTML(w) + '</button>').join('') +
     '<button class="bnpick small wpick' + (curW === 'none' ? ' on' : '') + '" data-w="none">hide</button>';
   const chosen = pickShown(picks, myShown).map(b => b.id);
-  const skins = earnedSkins(myStats), wearing = pickSkin(myStats, myBanner).id;
+  const skins = earnedSkins(myStats, myWorld), wearing = pickSkin(myStats, myBanner, myWorld).id;
   const skinList = skins.map(x => '<button class="bnpick skinpick' + (x.cls !== 'none' ? ' rb-' + x.cls : '') + (x.id === wearing ? ' on' : '') + '" data-s="' + x.id + '">' + x.label + '</button>').join('');
   const statLine = [10, 20, 30].map(m => {
     const s2 = myStats[m];
@@ -835,7 +839,8 @@ function ribLines(label) {
 function playerCardHTML(name, sk, badges, isMe, ready) {
   const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + ribLines(sk.label) + '</span>' : '';
   const bns = (badges || []).map(b => b.band ? wbHTML(b) : '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('');
-  return '<div class="slot filled' + (sk && sk.cls !== 'none' ? ' bnr-' + sk.cls : '') + '">' + rib +
+  const skin = sk && sk.cls !== 'none' ? ' bnr-' + sk.cls + (sk.mode ? ' wm' + sk.mode : '') : '';
+  return '<div class="slot filled' + skin + '">' + rib +
     '<div class="nm"><span>' + esc(name) + (isMe ? ' <span class="you">(you)</span>' : '') + '</span>' +
     (ready === null ? '' : '<span class="rdy ' + (ready ? 'y' : 'n') + '">' + (ready ? 'READY' : 'not ready') + '</span>') +
     '</div><div class="bns">' + bns + '</div></div>';
@@ -891,7 +896,7 @@ const MP = {
     const self = inLobby ? this.roster.find(x => x.pid === me.id) : null;
     const left = self
       ? playerCardHTML(self.name, (this.skins || {})[self.pid], (this.banners || {})[self.pid], true, !!self.ready)
-      : playerCardHTML(me.username, pickSkin(myStats, myBanner), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null);
+      : playerCardHTML(me.username, pickSkin(myStats, myBanner, myWorld), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null);
     const foe = inLobby ? this.roster.find(x => x.pid !== me.id) : null;
     const right = foe
       ? playerCardHTML(foe.name, (this.skins || {})[foe.pid], (this.banners || {})[foe.pid], false, !!foe.ready)
@@ -1072,7 +1077,7 @@ const MP = {
       const worldBy = {};
       profs.forEach(p => { shownBy[p.id] = p.shown; wearing[p.id] = p.banner || 'none'; worldBy[p.id] = p.world; });
       const out = {}, skins = {};
-      ids.forEach(id => { out[id] = visibleBadges(earnedBanners(stats[id], id === me.id), shownBy[id], worldBy[id]); skins[id] = pickSkin(stats[id], wearing[id]); });
+      ids.forEach(id => { out[id] = visibleBadges(earnedBanners(stats[id], id === me.id), shownBy[id], worldBy[id]); skins[id] = pickSkin(stats[id], wearing[id], worldBy[id]); });
       this.banners = out; this.skins = skins;
       if (this.phase === 'lobby') this.lobby();
     } catch (e) {}
