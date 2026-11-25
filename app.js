@@ -714,7 +714,7 @@ function home() {
     '<h1 class="hero">Code Tiles</h1><div id="mascot"></div>' + MODES_HTML +
     '<p>Hit as many tiles as you can before the clock runs out. Press the key for the <b>lowest</b> tile\'s lane.</p>' +
     '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\ud83c\udfdf\ufe0f Join / create a lobby</button></div>' +
-    '<div class="row"><button class="ghost" id="duel">\ud83e\udd4a 1v1</button></div>' +
+    '<div class="row"><button class="ghost" id="duel">\ud83e\udd4a 1v1</button><button class="ghost" id="duel2">\u2694\uFE0F 2v2</button></div>' +
     '<div class="row"><button class="ghost" id="sett">\u2699\uFE0F Settings</button><button class="ghost" id="frs">\uD83D\uDC65 Friends' +
       (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
     KEYS_HTML() + LB_HTML() +
@@ -722,7 +722,8 @@ function home() {
     'A wrong key <b style="color:#bfe8ff">freezes you</b>: 0.5s / 1s / 1.5s \u00b7 <kbd>Space</kbd> start \u00b7 <kbd>R</kbd> restart \u00b7 <kbd>Esc</kbd> home</p>', true);
   $('go').onclick = () => startRun();
   $('mp').onclick = () => MP.menu();
-  $('duel').onclick = () => MP.duel();
+  $('duel').onclick = () => MP.duel(1);
+  $('duel2').onclick = () => MP.duel(2);
   $('sett').onclick = () => settingsScreen();
   $('frs').onclick = () => friendsScreen();
   $('mecard').onclick = () => profileScreen();
@@ -910,9 +911,10 @@ const MP = {
   },
 
   // ---- quick match: queue for a mode, get paired with whoever else is waiting ----
-  duel() {
+  duel(teamSize) {
     this.leave(); running = false; $('mpbar').style.display = 'none';
-    if (!client()) { show('<h1>Offline</h1><p>1v1 needs the network.</p><button class="ghost" id="bk">Back</button>'); $('bk').onclick = home; return; }
+    this.duelTeam = teamSize || 1;
+    if (!client()) { show('<h1>Offline</h1><p>Matchmaking needs the network.</p><button class="ghost" id="bk">Back</button>'); $('bk').onclick = home; return; }
     this.duelMode = this.duelMode || DURATION || 20;
     this.qmOff = true;
     this.renderDuel('idle');
@@ -921,24 +923,33 @@ const MP = {
   },
   // you on the left, VS, them on the right
   duelSides(state) {
+    const n = this.duelTeam || 1;
     const inLobby = this.phase === 'lobby' && this.roster.length;
-    const self = inLobby ? this.roster.find(x => x.pid === me.id) : null;
-    const left = self
-      ? playerCardHTML(self.name, (this.skins || {})[self.pid], (this.banners || {})[self.pid], true, !!self.ready)
-      : playerCardHTML(me.username, pickSkin(myStats, myBanner, myWorld), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null);
-    const foe = inLobby ? this.roster.find(x => x.pid !== me.id) : null;
-    const right = foe
-      ? playerCardHTML(foe.name, (this.skins || {})[foe.pid], (this.banners || {})[foe.pid], false, !!foe.ready)
-      : state === 'searching'
-        ? '<div class="slot empty searching">searching for an opponent\u2026</div>'
-        : '<div class="slot empty">no opponent yet</div>';
+    const card = p => playerCardHTML(p.name, (this.skins || {})[p.pid], (this.banners || {})[p.pid], p.pid === me.id, !!p.ready);
+    let us = [], them = [];
+    if (inLobby) {
+      const i = this.roster.findIndex(x => x.pid === me.id);
+      const mt = this.teamOf(i < 0 ? 0 : i);
+      this.roster.forEach((p, k) => (this.teamOf(k) === mt ? us : them).push(p));
+    }
+    // my own card comes from my live profile until presence has me, so the banner never blanks
+    const left = (inLobby && us.length ? us.map(card).join('')
+      : playerCardHTML(me.username, pickSkin(myStats, myBanner, myWorld), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null)) +
+      this.emptySlots(n - Math.max(1, us.length), state, 'teammate');
+    const right = them.map(card).join('') + this.emptySlots(n - them.length, state, 'opponent');
     return '<div class="duel"><div class="dside">' + left + '</div><div class="vs">VS</div><div class="dside">' + right + '</div></div>';
+  },
+  emptySlots(k, state, who) {
+    return k <= 0 ? '' : Array(k).fill(state === 'searching'
+      ? '<div class="slot empty searching">searching\u2026</div>'
+      : '<div class="slot empty">no ' + who + ' yet</div>').join('');
   },
   renderDuel(state, err) {
     const modes = [10, 20, 30].map(m => '<button class="ghost fmtbtn' + (this.duelMode === m ? ' on' : '') + '" data-dm="' + m + '"' + (state === 'idle' ? '' : ' disabled') + '>' + MODE_ICON[m] + ' ' + m + 's</button>').join('');
     let action;
-    if (state === 'idle') action = '<div class="row"><button class="primary" id="dfind">Find opponent</button></div>';
-    else if (state === 'searching') action = '<div class="waiting">waiting for someone to join\u2026</div><div class="row"><button class="ghost" id="dcan">Cancel</button></div>';
+    const need = (this.duelTeam || 1) * 2;
+    if (state === 'idle') action = '<div class="row"><button class="primary" id="dfind">' + (need > 2 ? 'Find a match' : 'Find opponent') + '</button></div>';
+    else if (state === 'searching') action = '<div class="waiting">waiting for ' + (need > 2 ? (need - 1) + ' more players' : 'someone') + ' to join\u2026</div><div class="row"><button class="ghost" id="dcan">Cancel</button></div>';
     else action = '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready up') + '</button></div>' +
       '<div class="waiting">the duel starts once you are both ready</div>';
     // the two boxes stay full width even with the chat alongside, so both banners read properly
@@ -946,7 +957,9 @@ const MP = {
     const tail = (err ? '<div class="err">' + esc(err) + '</div>' : '') + action +
       '<button class="ghost" id="bk">' + (state === 'idle' ? 'Back' : 'Leave') + '</button>';
     const sides = this.duelSides(state);
-    show('<h1>1v1</h1><p class="tag">best of 3 \u00b7 random opponent</p>' +
+    const n = this.duelTeam || 1;
+    show('<h1>' + n + 'v' + n + '</h1><p class="tag">best of 3 \u00b7 ' +
+      (n > 1 ? 'random teammate and opponents' : 'random opponent') + '</p>' +
       (state === 'found'
         ? sides + '<div class="cols"><div class="colmain">' + head + tail + '</div><div class="colside">' + this.CHAT_HTML() + '</div></div>'
         : head + sides + tail), true);
@@ -957,16 +970,23 @@ const MP = {
     const r = $('rdy'); if (r) r.onclick = () => this.setReady(!this.ready);
     if (state === 'found') this.bindChat();
   },
+  // the 2v2 queue is a table of its own, so a 1v1 search never sees a 2v2 waiter
+  qmFns() {
+    return (this.duelTeam || 1) > 1
+      ? { match: 'quick_match2', poll: 'quick_poll2', cancel: 'quick_cancel2' }
+      : { match: 'quick_match', poll: 'quick_poll', cancel: 'quick_cancel' };
+  },
   async search() {
-    const mode = this.duelMode;
+    const mode = this.duelMode, fn = this.qmFns();
     this.qmOff = false;
     this.renderDuel('searching');
     try {
-      const res = await rpc('quick_match', { p_mode: mode });
+      const res = await rpc(fn.match, { p_mode: mode });
       if (this.qmOff) return;
       const rows = res.ok ? await res.json() : [];
       const row = rows[0] || {};
-      if (row.code) return this.startQuick(row.code, mode, false);
+      // the last to arrive gets the code straight back and joins; the rest are told by the poll
+      if (row.code) return this.startQuick(row.code, mode, !!row.host);
       this._queued = true;
       this.qmTick(mode);
     } catch (e) { this.renderDuel('idle', 'could not reach matchmaking'); }
@@ -975,23 +995,25 @@ const MP = {
     this._qmT = setTimeout(async () => {
       if (this.qmOff) return;
       try {
-        const r = await rpc('quick_poll', {});
+        const r = await rpc(this.qmFns().poll, {});
         const rows = r.ok ? await r.json() : [];
-        const code = rows[0] && rows[0].code;
-        if (code) { this._queued = false; return this.startQuick(code, mode, true); }
+        const row = rows[0] || {};
+        // 1v1's poll returns a bare code and the waiter always hosts; 2v2 names its host
+        if (row.code) { this._queued = false; return this.startQuick(row.code, mode, row.host === undefined ? true : !!row.host); }
       } catch (e) {}
       this.qmTick(mode);
     }, 1500);
   },
   qmStop() {
     this.qmOff = true; clearTimeout(this._qmT);
-    if (this._queued) { this._queued = false; try { rpc('quick_cancel', {}); } catch (e) {} }
+    if (this._queued) { this._queued = false; try { rpc(this.qmFns().cancel, {}); } catch (e) {} }
   },
-  // whoever was already waiting hosts, so both sides agree without negotiating
+  // one agreed host, so the four of them do not negotiate it
   startQuick(code, mode, isHost) {
+    const n = this.duelTeam || 1;
     this.qmStop();
     this.join(code, isHost);
-    this.cfg = { format: 'shootout', mode: mode, teamSize: 1, rounds: 3, quick: true };
+    this.cfg = { format: 'shootout', mode: mode, teamSize: n, rounds: 3, quick: true };
   },
 
   invite(friendId) {
