@@ -104,6 +104,19 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 /* ---- home top bar ---- */
 #topbar { display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;
   font-size:11px; color:var(--dim); margin:0 0 12px; }
+/* your own box, top left of home: the lobby card, as everyone else sees it */
+#mecard { align-self:flex-start; width:100%; max-width:320px; cursor:pointer; margin:0 0 2px; }
+#mecard .slot { margin-bottom:0; min-height:86px; }
+#mecard:hover .slot { border-color:#3b4a5c; }
+#mecard .hint { font-size:10px; color:var(--dim); text-align:left; padding:3px 2px 0; letter-spacing:.4px; }
+#mecard:hover .hint { color:var(--fg); }
+/* tile icon themes: grey chips, so the picker never implies a colour change */
+.thmpick { display:flex; flex-direction:column; align-items:center; gap:5px; padding:7px 9px; border-radius:12px; }
+.thmpick.on { outline:2px solid var(--gold); outline-offset:1px; }
+.thmg { display:flex; gap:4px; }
+.thmg i { width:26px; height:26px; border-radius:6px; background:#2b333d; color:var(--fg);
+  font-style:normal; font-weight:800; font-size:15px; line-height:26px; text-align:center; }
+.thmn { font-size:10px; color:var(--dim); font-weight:500; letter-spacing:.3px; }
 #topbar .onl { color:#4ade80; font-weight:800; display:inline-flex; align-items:center; gap:6px; }
 #topbar .onl i { width:7px; height:7px; border-radius:50%; background:#4ade80; flex:0 0 auto;
   box-shadow:0 0 7px rgba(74,222,128,.9); animation:onlpulse 2s ease-in-out infinite; }
