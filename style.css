@@ -113,6 +113,9 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
   font-family:inherit; font-size:11px; padding:3px 11px; border-radius:20px; cursor:pointer; }
 #topbar .inv:hover { color:var(--fg); border-color:#3a4450; }
 #topbar .inv.ok { color:#4ade80; border-color:#4ade80; font-weight:800; }
+.wpick { background:none; border:0; padding:0; cursor:pointer; line-height:0; border-radius:4px; }
+.wpick.on { outline:2px solid var(--gold); outline-offset:2px; }
+.bnpick.wpick { line-height:1; padding:4px 10px; }
 @media (prefers-reduced-motion: reduce) { #topbar .onl i { animation:none; } }
 
 
