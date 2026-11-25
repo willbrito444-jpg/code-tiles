@@ -669,7 +669,7 @@ function loginScreen(err, mode) {
   $('swap').onclick = () => loginScreen('', mode === 'up' ? 'in' : 'up');
   const go = async () => {
     const u = ($('u').value || '').trim().toUpperCase(), p = $('p').value || '';
-    if (u.length < 2) return loginScreen('Username needs at least 2 characters.', mode);
+    if (!u.length) return loginScreen('Enter a username.', mode);
     if (!/^[A-Z0-9_]+$/.test(u)) return loginScreen('Usernames can use letters, numbers and _ only.', mode);
     if (p.length < 6) return loginScreen('Password needs at least 6 characters.', mode);
     $('doit').disabled = true; $('doit').textContent = 'working\u2026';
