@@ -100,6 +100,26 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 @keyframes mythshimmer { 0% { background-position:0% 50%; } 100% { background-position:-300% 50%; } }
 @keyframes ogfoil { 0% { background-position:0% 50%; } 100% { background-position:-320% 50%; } }
 .uc { text-transform:uppercase; }
+
+/* ---- banners: the whole lobby box, worn one at a time ---- */
+.slot { position:relative; overflow:hidden; }
+.slot .ribbon { position:absolute; top:0; right:0; font-size:9px; font-weight:900; letter-spacing:.6px;
+  padding:3px 9px; border-radius:0 7px 0 9px; z-index:2; }
+.rb-og { color:#08131c;
+  background:linear-gradient(100deg,#ff9ad5 0%,#ffd98a 16%,#a8ff9e 32%,#8ae7ff 48%,#c3a2ff 64%,#ff9ad5 82%,#ffd98a 100%);
+  background-size:320% 100%; animation:ogfoil 6s linear infinite; }
+.rb-world { color:#fff2f2; text-shadow:0 1px 2px rgba(0,0,0,.5);
+  background:linear-gradient(100deg,#8e0e0e 0%,#d42020 20%,#ff6b6b 34%,#d42020 48%,#8e0e0e 70%,#8e0e0e 100%);
+  background-size:300% 100%; animation:mythshimmer 3.4s linear infinite; }
+.slot.bnr-og { border-color:#9fe9ff;
+  background:linear-gradient(100deg,rgba(255,154,213,.16) 0%,rgba(255,217,138,.16) 16%,rgba(168,255,158,.16) 32%,rgba(138,231,255,.16) 48%,rgba(195,162,255,.16) 64%,rgba(255,154,213,.16) 82%,rgba(255,217,138,.16) 100%),#141b24;
+  background-size:320% 100%,100% 100%; animation:ogfoil 6s linear infinite;
+  box-shadow:0 0 12px rgba(159,233,255,.22), inset 0 0 18px rgba(159,233,255,.1); }
+.slot.bnr-world { border-color:#ff5252; background:#1d1317;
+  box-shadow:0 0 11px rgba(255,60,60,.22), inset 0 0 18px rgba(255,60,60,.08); }
+.skinpick.rb-og, .skinpick.rb-world { border:1px solid transparent; }
+@media (prefers-reduced-motion: reduce) { .rb-og, .rb-world, .slot.bnr-og { animation:none; } }
+
 @media (prefers-reduced-motion: reduce) { .r-epic, .r-mythic, .r-og { animation:none; } }
 /* your standing, pinned under the top 10 */
 .lbgap { text-align:center; color:#46525f; font-size:13px; letter-spacing:2px; line-height:1; padding:3px 0 1px; }
