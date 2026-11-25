@@ -5,7 +5,7 @@ const SUPABASE = { url: 'https://taugktxsoxjvospvugsz.supabase.co', key: 'sb_pub
 const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d'), field = $('field'), msg = $('msg');
 const LANES = 3, COL = ['#5cc8ff', '#c084fc', '#ffa657'], GLYPH = ['(', '[', '{'];
-const FREEZE_BY_MODE = { 10: .5, 20: 1, 30: 2 }, TILE_H = 100, SLIDE_SPEED = 1000;
+const FREEZE_BY_MODE = { 10: .5, 20: 1, 30: 1.5 }, TILE_H = 100, SLIDE_SPEED = 1000;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
 
