@@ -179,9 +179,11 @@ async function fetchBoard(mode, tab) {
 function logRun(mode, sc, ms) {
   if (!me || !token || sc < (LOG_MIN[mode] || 0)) return null;
   for (const k in cache) delete cache[k];
+  const body = { user_id: me.id, username: me.username, mode, score: sc, misses: ms };
+  if (MP && MP.cfg && MP.cfg.quick && MP.code && MP.active) { body.match_id = MP.code; body.round = MP.round; }
   return fetch(SUPABASE.url + '/rest/v1/scores', {
     method: 'POST', headers: { ...jhead(), Prefer: 'return=minimal' },
-    body: JSON.stringify({ user_id: me.id, username: me.username, mode, score: sc, misses: ms })
+    body: JSON.stringify(body)
   }).then(r => r.ok ? 'ok' : 'fail').catch(() => 'fail');
 }
 function LB_HTML(body) {
@@ -336,6 +338,7 @@ async function fetchStats(ids) {
     const b = (by[x.uid] = by[x.uid] || {});
     if (x.mode) b[x.mode] = x;
     if (x.og) b.og = x.og;
+    if (x.duels) b.duels = x.duels;
   });
   bannerCache[key] = { t: Date.now(), v: by };
   return by;
@@ -344,6 +347,7 @@ async function fetchStats(ids) {
 const RARITY = ['common', 'uncommon', 'rare', 'epic', 'mythic', 'og'];
 const TIER_RARITY = ['common', 'uncommon', 'rare', 'epic'];
 const GAMES_TIERS = [[10, 'common'], [100, 'uncommon'], [1000, 'rare']];
+const DUEL_TIERS = [[10, 'common'], [50, 'uncommon'], [250, 'rare']];
 const WORLD_MIN_PLAYERS = 10;
 // every banner a player has actually earned, best tier per mode plus specials
 function earnedBanners(st) {
@@ -363,6 +367,10 @@ function earnedBanners(st) {
   });
   for (let i = GAMES_TIERS.length - 1; i >= 0; i--) {
     if (games >= GAMES_TIERS[i][0]) { out.push({ id: 'g' + i, rar: GAMES_TIERS[i][1], label: GAMES_TIERS[i][0] + ' games 🎮' }); break; }
+  }
+  // duels won, derived server-side from the round rows themselves
+  for (let i = DUEL_TIERS.length - 1; i >= 0; i--) {
+    if ((st.duels | 0) >= DUEL_TIERS[i][0]) { out.push({ id: 'd' + i, rar: DUEL_TIERS[i][1], label: '1v1 winner ' + DUEL_TIERS[i][0] + 'x' }); break; }
   }
   if (st[30] && st[30].clean_best >= 130) out.push({ id: 'flawless', rar: 'common', label: '🧊 Flawless' });
   if (st[20] && st[20].clean_best >= 125) out.push({ id: 'untouch', rar: 'epic', label: '💎 Untouchable' });
@@ -539,8 +547,7 @@ function home() {
   show('<h1 class="hero">Code Tiles</h1><div id="mascot"></div>' + MODES_HTML +
     '<p>Hit as many tiles as you can before the clock runs out. Press the key for the <b>lowest</b> tile\'s lane.</p>' +
     '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\u2694 Play a friend</button></div>' +
-    '<p class="tag">Quick 1v1 \u00b7 random opponent \u00b7 best of 3</p>' +
-    '<div class="row">' + [10, 20, 30].map(m => '<button class="ghost qmbtn" data-q="' + m + '">\u2694 ' + m + 's</button>').join('') + '</div>' +
+    '<div class="row"><button class="ghost" id="duel">\u2694 1v1</button></div>' +
     '<div class="row"><button class="ghost" id="prof">\uD83D\uDC64 Profile</button><button class="ghost" id="frs">\uD83D\uDC65 Friends' +
       (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
     KEYS_HTML() + LB_HTML() +
@@ -548,7 +555,7 @@ function home() {
     'A wrong key <b style="color:#bfe8ff">freezes you</b>: 0.5s / 1s / 1.5s \u00b7 <kbd>Space</kbd> start \u00b7 <kbd>R</kbd> restart \u00b7 <kbd>Esc</kbd> home</p>', true);
   $('go').onclick = () => startRun();
   $('mp').onclick = () => MP.menu();
-  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => MP.quick(+b.dataset.q));
+  $('duel').onclick = () => MP.duel();
   $('prof').onclick = () => profileScreen();
   $('frs').onclick = () => friendsScreen();
   $('out').onclick = e => { e.preventDefault(); signOut(); };
@@ -631,6 +638,15 @@ function soloResult(pb, logging) {
 }
 
 /* ================= MULTIPLAYER ================= */
+// one player's box: banner behind it, badges inside it
+function playerCardHTML(name, sk, badges, isMe, ready) {
+  const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + sk.label + '</span>' : '';
+  const bns = (badges || []).map(b => '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('');
+  return '<div class="slot filled' + (sk && sk.cls !== 'none' ? ' bnr-' + sk.cls : '') + '">' + rib +
+    '<div class="nm"><span>' + esc(name) + (isMe ? ' <span class="you">(you)</span>' : '') + '</span>' +
+    (ready === null ? '' : '<span class="rdy ' + (ready ? 'y' : 'n') + '">' + (ready ? 'READY' : 'not ready') + '</span>') +
+    '</div><div class="bns">' + bns + '</div></div>';
+}
 const MP = {
   ch: null, code: '', host: false, roster: [], cfg: { format: 'shootout', mode: 20, teamSize: 1 },
   phase: 'none', round: 0, wins: { A: 0, B: 0 }, history: [], roundScores: {}, myTeam: 'A', joinedAt: 0,
@@ -667,26 +683,63 @@ const MP = {
   },
 
   // ---- quick match: queue for a mode, get paired with whoever else is waiting ----
-  async quick(mode) {
+  duel() {
     this.leave(); running = false; $('mpbar').style.display = 'none';
-    if (!client()) { show('<h1>Offline</h1><p>Matchmaking needs the network.</p><button class="ghost" id="bk">Back</button>'); $('bk').onclick = home; return; }
+    if (!client()) { show('<h1>Offline</h1><p>1v1 needs the network.</p><button class="ghost" id="bk">Back</button>'); $('bk').onclick = home; return; }
+    this.duelMode = this.duelMode || DURATION || 20;
+    this.qmOff = true;
+    this.renderDuel('idle');
+  },
+  // you on the left, VS, them on the right
+  duelSides(state) {
+    const inLobby = this.phase === 'lobby' && this.roster.length;
+    const self = inLobby ? this.roster.find(x => x.pid === me.id) : null;
+    const left = self
+      ? playerCardHTML(self.name, (this.skins || {})[self.pid], (this.banners || {})[self.pid], true, !!self.ready)
+      : playerCardHTML(me.username, pickSkin(myStats, myBanner), pickShown(earnedBanners(myStats), myShown), true, null);
+    const foe = inLobby ? this.roster.find(x => x.pid !== me.id) : null;
+    const right = foe
+      ? playerCardHTML(foe.name, (this.skins || {})[foe.pid], (this.banners || {})[foe.pid], false, !!foe.ready)
+      : state === 'searching'
+        ? '<div class="slot empty searching">searching for an opponent\u2026</div>'
+        : '<div class="slot empty">no opponent yet</div>';
+    return '<div class="duel"><div class="dside">' + left + '</div><div class="vs">VS</div><div class="dside">' + right + '</div></div>';
+  },
+  renderDuel(state, err) {
+    const modes = [10, 20, 30].map(m => '<button class="ghost fmtbtn' + (this.duelMode === m ? ' on' : '') + '" data-dm="' + m + '"' + (state === 'idle' ? '' : ' disabled') + '>' + MODE_ICON[m] + ' ' + m + 's</button>').join('');
+    let action;
+    if (state === 'idle') action = '<div class="row"><button class="primary" id="dfind">Find opponent</button></div>';
+    else if (state === 'searching') action = '<div class="waiting">waiting for someone to join\u2026</div><div class="row"><button class="ghost" id="dcan">Cancel</button></div>';
+    else action = '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready up') + '</button></div>' +
+      '<div class="waiting">the duel starts once you are both ready</div>';
+    const main = '<div class="row">' + modes + '</div>' +
+      this.duelSides(state) +
+      (err ? '<div class="err">' + esc(err) + '</div>' : '') + action +
+      '<button class="ghost" id="bk">' + (state === 'idle' ? 'Back' : 'Leave') + '</button>';
+    show('<h1>1v1</h1><p class="tag">best of 3 \u00b7 random opponent</p>' +
+      (state === 'found'
+        ? '<div class="cols"><div class="colmain">' + main + '</div><div class="colside">' + this.CHAT_HTML() + '</div></div>'
+        : main), true);
+    $('bk').onclick = () => { this.qmStop(); this.leave(); home(); };
+    document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => { this.duelMode = +b.dataset.dm; this.renderDuel('idle'); });
+    const f = $('dfind'); if (f) f.onclick = () => this.search();
+    const c = $('dcan'); if (c) c.onclick = () => { this.qmStop(); this.renderDuel('idle'); };
+    const r = $('rdy'); if (r) r.onclick = () => this.setReady(!this.ready);
+    if (state === 'found') this.bindChat();
+  },
+  async search() {
+    const mode = this.duelMode;
     this.qmOff = false;
-    show('<h1>Finding a game</h1><p>' + MODE_ICON[mode] + ' ' + mode + 's \u00b7 best of 3</p>' +
-      '<div class="waiting" id="qmst">looking for an opponent\u2026</div>' +
-      '<div class="row"><button class="ghost" id="qmc">Cancel</button></div>', true);
-    $('qmc').onclick = () => { this.qmStop(); this.menu(); };
+    this.renderDuel('searching');
     try {
-      const r = await rpc('quick_match', { p_mode: mode });
+      const res = await rpc('quick_match', { p_mode: mode });
       if (this.qmOff) return;
-      const rows = r.ok ? await r.json() : [];
+      const rows = res.ok ? await res.json() : [];
       const row = rows[0] || {};
       if (row.code) return this.startQuick(row.code, mode, false);
       this._queued = true;
-      const st = $('qmst'); if (st) st.textContent = 'waiting for someone to join\u2026';
       this.qmTick(mode);
-    } catch (e) {
-      const st = $('qmst'); if (st) st.innerHTML = '<span class="err">could not reach matchmaking</span>';
-    }
+    } catch (e) { this.renderDuel('idle', 'could not reach matchmaking'); }
   },
   qmTick(mode) {
     this._qmT = setTimeout(async () => {
@@ -768,7 +821,7 @@ const MP = {
       this.advancing = true; this.round++; this.nextRound();
     }
     // a quick match has no lobby to sit in: start as soon as the pair is complete
-    if (this.cfg.quick && this.host && this.phase === 'lobby' && !this.advancing && this.roster.length >= 2) {
+    if (this.cfg.quick && this.host && this.phase === 'lobby' && !this.advancing && this.allReady()) {
       this.advancing = true; this.startMatch();
     }
   },
@@ -831,13 +884,8 @@ const MP = {
     const mem = this.teamMembers(t); let h = '';
     for (let i = 0; i < n; i++) {
       const p = mem[i];
-      const bns = p && this.banners[p.pid] ? this.banners[p.pid].map(b => '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('') : '';
-      const sk = (p && this.skins && this.skins[p.pid]) || null;
-      const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + sk.label + '</span>' : '';
       h += p
-        ? '<div class="slot filled' + (sk && sk.cls !== 'none' ? ' bnr-' + sk.cls : '') + '">' + rib + '<div class="nm"><span>' + esc(p.name) + (p.pid === me.id ? ' <span class="you">(you)</span>' : '') + '</span>' +
-          '<span class="rdy ' + (p.ready ? 'y' : 'n') + '">' + (p.ready ? 'READY' : 'not ready') + '</span></div>' +
-          '<div class="bns">' + bns + '</div></div>'
+        ? playerCardHTML(p.name, (this.skins || {})[p.pid], (this.banners || {})[p.pid], p.pid === me.id, !!p.ready)
         : '<div class="slot empty">waiting for a player\u2026</div>';
     }
     return h;
@@ -845,6 +893,7 @@ const MP = {
 
   lobby() {
     this.phase = 'lobby'; $('mpbar').style.display = 'none'; running = false;
+    if (this.cfg.quick) return this.renderDuel('found');
     const need = this.need(), have = this.roster.length;
     const fmt = (id, label) => '<button class="ghost fmtbtn' + (this.cfg.format === id ? ' on' : '') + '" data-fmt="' + id + '"' + (this.host ? '' : ' disabled') + '>' + label + '</button>';
     const sz = (n, label) => '<button class="ghost fmtbtn' + (this.cfg.teamSize === n ? ' on' : '') + '" data-sz="' + n + '"' + (this.host ? '' : ' disabled') + '>' + label + '</button>';
