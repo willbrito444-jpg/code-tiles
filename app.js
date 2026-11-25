@@ -1084,8 +1084,9 @@ const MP = {
   repaint() {
     if (this.phase === 'lobby') return this.lobby();
     if (this.phase !== 'between' && this.phase !== 'done') return;
-    // the reveal is already on screen: refresh the ready row in place, or it restarts
-    if (this.phase === 'between' && $('rdyrow')) return this.paintReady();
+    // the reveal for THIS round is already up: refresh the ready row in place, or it restarts.
+    // keyed on the round, so a new round always rebuilds and never inherits the last one.
+    if (this.phase === 'between' && $('rdyrow') && this._shownRound === this.round) return this.paintReady();
     this.resultScreen();
   },
   paintReady() {
@@ -1238,6 +1239,7 @@ const MP = {
   },
   resultScreen() {
     const p = this.lastResult; if (!p) return;
+    this._shownRound = this.round;
     const mine = this.myTeam, won = p.winner === mine, tie = p.winner === 'tie';
     const names = p.roster || [];
     const line = t => names.filter(n => n.team === t).map(n => esc(n.name) + ' <b>' + (p.scores[n.pid] | 0) + '</b>').join('<br>');
@@ -1246,20 +1248,40 @@ const MP = {
       Array(Math.max(0, this.totalRounds() - this.history.length)).fill('<div class="pip"></div>').join('');
     const readyList = this.roster.map(r => '<span class="rdy ' + (r.ready ? 'y' : 'n') + '">' + esc(r.name) + (r.ready ? ' \u2713' : '') + '</span>').join(' ');
     if (!p.done) {
-      // one side lands, then the other, then the verdict. the timings live in the css.
+      // your side counts up first, player by player, then theirs, then the verdict.
+      // every step is a delay handed to the css, so there is no timer to cancel.
       const team = this.cfg.teamSize > 1;
-      const head = t => team ? 'TEAM ' + t : ((names.filter(n => n.team === t)[0] || {}).name || ('TEAM ' + t));
-      const mark = t => p.winner === 'tie' ? '' : (t === p.winner ? ' wins' : ' lose');
-      const panel = t => '<div class="rteam r' + t.toLowerCase() + mark(t) + '" style="--in:' + (t === 'A' ? '.1s' : '1.15s') + '">' +
-        '<h3>' + esc(head(t)) + '</h3><div class="ravg">' + p[t].toFixed(dec) + '</div>' +
-        '<div class="rlab">' + (team ? 'average tiles' : 'tiles') + '</div>' +
-        '<div class="rnames">' + line(t) + '</div></div>';
+      const members = t => names.filter(n => n.team === t);
+      const head = t => team ? 'TEAM ' + t : ((members(t)[0] || {}).name || ('TEAM ' + t));
+      // one line per player, then the pause while they fold into the average
+      const STEP = team ? .40 : 0, AFTER = team ? .85 : .70;
+      const at = {};
+      let t = .15;
+      [mine, mine === 'A' ? 'B' : 'A'].forEach(side => {
+        const m = { rows: [] };
+        if (team) { members(side).forEach(() => { m.rows.push(t); t += STEP; }); }
+        m.sum = t; t += AFTER;
+        at[side] = m;
+      });
+      const vd = t.toFixed(2);
+      const panel = side => {
+        const m = at[side];
+        const rows = team ? members(side).map((n, i) => '<div class="rrow" style="--d:' + m.rows[i].toFixed(2) + 's">' +
+          '<span>' + esc(n.name) + '</span><b>' + (p.scores[n.pid] | 0) + '</b></div>').join('') : '';
+        return '<div class="rteam r' + side.toLowerCase() + (p.winner === 'tie' ? '' : side === p.winner ? ' wins' : ' lose') +
+          '" style="--vd:' + vd + 's;--md:' + m.sum.toFixed(2) + 's">' +
+          '<h3 style="--d:.05s">' + esc(head(side)) + '</h3>' + rows +
+          '<div class="rmerge' + (team ? ' sum' : '') + '" style="--d:' + m.sum.toFixed(2) + 's">' +
+          '<div class="ravg">' + p[side].toFixed(dec) + '</div>' +
+          '<div class="rlab">' + (team ? 'average' : 'tiles') + '</div></div></div>';
+      };
+      // your team on the left, so the reveal reads left to right in the order it plays
       show('<h2 class="rhead">Round ' + (this.round + 1) + '</h2>' +
         '<div class="cols"><div class="colmain">' +
-        '<div class="reveal">' + panel('A') + '<div class="rvs">VS</div>' + panel('B') + '</div>' +
-        '<div class="verdict' + (tie ? ' tie' : won ? ' good' : ' bad') + '">' +
+        '<div class="reveal">' + panel(mine) + '<div class="rvs">VS</div>' + panel(mine === 'A' ? 'B' : 'A') + '</div>' +
+        '<div class="verdict' + (tie ? ' tie' : won ? ' good' : ' bad') + '" style="--vd:' + vd + 's">' +
           (tie ? 'Round tied' : esc(head(p.winner)) + ' takes it') + '</div>' +
-        '<div class="revealctl">' +
+        '<div class="revealctl" style="--vd:' + vd + 's">' +
         '<div class="pips">' + pips + '</div>' +
         '<p>Series: <b style="color:var(--acc)">' + this.wins.A + '</b> \u2013 <b style="color:#ffa657">' + this.wins.B + '</b></p>' +
         '<div class="row" id="rdyrow">' + readyList + '</div>' +
