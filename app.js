@@ -713,7 +713,7 @@ function home() {
     '<div id="mecard" title="customise your banner and badges">' + meCardHTML() + '</div>' +
     '<h1 class="hero">Code Tiles</h1><div id="mascot"></div>' + MODES_HTML +
     '<p>Hit as many tiles as you can before the clock runs out. Press the key for the <b>lowest</b> tile\'s lane.</p>' +
-    '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\ud83e\udd4a Play a friend</button></div>' +
+    '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\ud83c\udfdf\ufe0f Join / create a lobby</button></div>' +
     '<div class="row"><button class="ghost" id="duel">\ud83e\udd4a 1v1</button></div>' +
     '<div class="row"><button class="ghost" id="sett">\u2699\uFE0F Settings</button><button class="ghost" id="frs">\uD83D\uDC65 Friends' +
       (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
@@ -828,7 +828,7 @@ function soloResult(pb, logging) {
     (frozenTotal > 0 ? '<br>projected without the ' + frozenTotal.toFixed(1) + ' s frozen: <b>' + (projected() || score) + '</b>' : '') + '</p>' +
     '<div id="logst" class="waiting">' + (worth ? 'logging\u2026' : 'no tiles hit — nothing to log') + '</div>' +
     LB_HTML() + MODES_HTML +
-    '<div class="row"><button class="primary" id="go">Again</button><button class="ghost" id="mp">\ud83e\udd4a Play a friend</button></div>' +
+    '<div class="row"><button class="primary" id="go">Again</button><button class="ghost" id="mp">\ud83c\udfdf\ufe0f Join / create a lobby</button></div>' +
     '<p><kbd>Space</kbd> again \u00b7 <kbd>Esc</kbd> home</p>');
   $('go').onclick = () => startRun();
   $('mp').onclick = () => MP.menu();
@@ -890,7 +890,7 @@ const MP = {
   menu() {
     this.leave(); running = false; $('mpbar').style.display = 'none';
     if (!client()) { show('<h1>Offline</h1><p>Multiplayer needs the network and it did not load. Try reloading.</p><button class="ghost" id="bk">Back</button>'); $('bk').onclick = home; return; }
-    show('<h1>Play a friend</h1><p>Create a lobby and share the code, or invite a friend who is online.</p>' +
+    show('<h1>Lobby</h1><p>Create a lobby and share the code, or invite a friend who is online.</p>' +
       '<div class="row"><button class="primary" id="create">Create lobby</button></div>' +
       '<div class="row"><input id="code" maxlength="5" placeholder="CODE" style="text-transform:uppercase;width:110px;text-align:center;letter-spacing:4px;font-weight:800"><button class="ghost" id="join">Join</button></div>' +
       '<div id="mperr"></div>' + FRIENDS_HTML(false) +
@@ -1059,7 +1059,19 @@ const MP = {
   teamMembers(t) { return this.roster.filter((p, i) => this.teamOf(i) === t); },
   need() { return this.cfg.teamSize * 2; },
   allReady() { return this.roster.length >= this.need() && this.roster.every(p => p.ready); },
-  repaint() { if (this.phase === 'lobby') this.lobby(); else if (this.phase === 'between' || this.phase === 'done') this.resultScreen(); },
+  repaint() {
+    if (this.phase === 'lobby') return this.lobby();
+    if (this.phase !== 'between' && this.phase !== 'done') return;
+    // the reveal is already on screen: refresh the ready row in place, or it restarts
+    if (this.phase === 'between' && $('rdyrow')) return this.paintReady();
+    this.resultScreen();
+  },
+  paintReady() {
+    const row = $('rdyrow');
+    if (row) row.innerHTML = this.roster.map(r => '<span class="rdy ' + (r.ready ? 'y' : 'n') + '">' + esc(r.name) + (r.ready ? ' \u2713' : '') + '</span>').join(' ');
+    const b = $('rdy');
+    if (b) { b.classList.toggle('on', this.ready); b.textContent = this.ready ? '\u2713 Ready' : 'Ready for next round'; }
+  },
 
   onChat(p) {
     if (!p) return;
@@ -1212,15 +1224,26 @@ const MP = {
       Array(Math.max(0, this.totalRounds() - this.history.length)).fill('<div class="pip"></div>').join('');
     const readyList = this.roster.map(r => '<span class="rdy ' + (r.ready ? 'y' : 'n') + '">' + esc(r.name) + (r.ready ? ' \u2713' : '') + '</span>').join(' ');
     if (!p.done) {
-      show('<h2>' + (tie ? 'Round tied' : won ? 'Round won' : 'Round lost') + '</h2>' +
+      // one side lands, then the other, then the verdict. the timings live in the css.
+      const team = this.cfg.teamSize > 1;
+      const head = t => team ? 'TEAM ' + t : ((names.filter(n => n.team === t)[0] || {}).name || ('TEAM ' + t));
+      const mark = t => p.winner === 'tie' ? '' : (t === p.winner ? ' wins' : ' lose');
+      const panel = t => '<div class="rteam r' + t.toLowerCase() + mark(t) + '" style="--in:' + (t === 'A' ? '.1s' : '1.15s') + '">' +
+        '<h3>' + esc(head(t)) + '</h3><div class="ravg">' + p[t].toFixed(dec) + '</div>' +
+        '<div class="rlab">' + (team ? 'average tiles' : 'tiles') + '</div>' +
+        '<div class="rnames">' + line(t) + '</div></div>';
+      show('<h2 class="rhead">Round ' + (this.round + 1) + '</h2>' +
         '<div class="cols"><div class="colmain">' +
-        '<div class="vs"><div><div class="sc a">' + p.A.toFixed(dec) + '</div><div>' + line('A') + '</div></div><div>vs</div><div><div class="sc b">' + p.B.toFixed(dec) + '</div><div>' + line('B') + '</div></div></div>' +
+        '<div class="reveal">' + panel('A') + '<div class="rvs">VS</div>' + panel('B') + '</div>' +
+        '<div class="verdict' + (tie ? ' tie' : won ? ' good' : ' bad') + '">' +
+          (tie ? 'Round tied' : esc(head(p.winner)) + ' takes it') + '</div>' +
+        '<div class="revealctl">' +
         '<div class="pips">' + pips + '</div>' +
         '<p>Series: <b style="color:var(--acc)">' + this.wins.A + '</b> \u2013 <b style="color:#ffa657">' + this.wins.B + '</b></p>' +
-        '<div class="row">' + readyList + '</div>' +
+        '<div class="row" id="rdyrow">' + readyList + '</div>' +
         '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready for next round') + '</button></div>' +
         '<div class="waiting">next round starts when everyone is ready</div>' +
-        '</div><div class="colside">' + this.CHAT_HTML() + '</div></div>', true);
+        '</div></div><div class="colside">' + this.CHAT_HTML() + '</div></div>', true);
       $('rdy').onclick = () => this.setReady(!this.ready);
       this.bindChat();
     } else {
