@@ -395,7 +395,10 @@ async function fetchStats(ids) {
   const key = ids.slice().sort().join(',');
   const c = bannerCache[key];
   if (c && Date.now() - c.t < 20000) return c.v;
-  const r = await rpc('player_banners', { ids });
+  const [r, pr] = await Promise.all([
+    rpc('player_banners', { ids }),
+    rpc('period_ranks', { ids, p_day: sinceIso('day'), p_week: sinceIso('week') })
+  ]);
   const rows = r.ok ? await r.json() : [];
   const by = {};
   rows.forEach(x => {
@@ -403,6 +406,11 @@ async function fetchStats(ids) {
     if (x.mode) b[x.mode] = x;
     if (x.og) b.og = x.og;
     if (x.duels) b.duels = x.duels;
+  });
+  (pr.ok ? await pr.json() : []).forEach(x => {
+    const b = (by[x.uid] = by[x.uid] || {});
+    const m = (b[x.mode] = b[x.mode] || {});
+    m.rnk_d = x.rnk_d; m.rnk_w = x.rnk_w;
   });
   bannerCache[key] = { t: Date.now(), v: by };
   return by;
@@ -419,18 +427,24 @@ function rankBadges(st, isMe) {
   const out = [];
   [10, 20, 30].forEach(m => {
     const s = st[m];
-    if (!s || !s.rnk || s.rnk > 100 || s.players < WORLD_MIN_PLAYERS) return;
-    const n = s.rnk;
-    const band = n === 1 ? 'w1' : n === 2 ? 'w2' : n === 3 ? 'w3' : n <= 10 ? 'w10' : 'w100';
-    const text = n === 1 ? '\ud83d\udc51 WORLD #1' : n <= 3 ? 'WORLD #' + n : n <= 10 ? 'TOP 10' : 'TOP 100';
-    let delta = '';
-    if (isMe) {
-      const prev = myPrevRank[m] || 0;
-      if (prev && prev !== n) delta = n < prev ? ' \u25b2' + (prev - n) : ' \u25bc' + (n - prev);
+    if (!s) return;
+    if (s.rnk && s.rnk <= 100 && s.players >= WORLD_MIN_PLAYERS) {
+      const n = s.rnk;
+      const band = n === 1 ? 'w1' : n === 2 ? 'w2' : n === 3 ? 'w3' : n <= 10 ? 'w10' : 'w100';
+      const text = n === 1 ? '\ud83d\udc51 WORLD #1' : n <= 3 ? 'WORLD #' + n : n <= 10 ? 'TOP 10' : 'TOP 100';
+      let delta = '';
+      if (isMe) {
+        const prev = myPrevRank[m] || 0;
+        if (prev && prev !== n) delta = n < prev ? ' \u25b2' + (prev - n) : ' \u25bc' + (n - prev);
+      }
+      out.push({ id: 'w' + m, rar: 'world', per: '', band: band, rnk: n, mode: m, label: text + ' ' + MODE_ICON[m] + delta });
     }
-    out.push({ id: 'w' + m, rar: 'world', band: band, rnk: n, mode: m, label: text + ' ' + MODE_ICON[m] + delta });
+    if (s.rnk_w && s.rnk_w <= 100) out.push({ id: 'k' + m, rar: 'world', per: 'w', band: 'wk', rnk: s.rnk_w, mode: m, label: 'WEEKLY #' + s.rnk_w + ' ' + MODE_ICON[m] });
+    if (s.rnk_d && s.rnk_d <= 100) out.push({ id: 'd' + m, rar: 'world', per: 'd', band: 'wd', rnk: s.rnk_d, mode: m, label: 'DAILY #' + s.rnk_d + ' ' + MODE_ICON[m] });
   });
-  return out.sort((a, b) => a.rnk - b.rnk);
+  // lifetime outranks a week, a week outranks a day
+  const ord = { '': 0, w: 1, d: 2 };
+  return out.sort((a, b) => ord[a.per] - ord[b.per] || a.rnk - b.rnk || a.mode - b.mode);
 }
 // 'none' hides it; an unset or stale choice falls back to your best placing
 function pickWorld(all, choice) {
@@ -479,7 +493,7 @@ function earnedSkins(st, worldChoice) {
   if (!st) return out;
   if (st.og) out.push({ id: 'og', cls: 'og', label: 'OG #' + st.og });
   // the banner follows the placing you chose to wear, so the mascot matches it
-  const ws = rankBadges(st, false);
+  const ws = rankBadges(st, false).filter(b => !b.per);
   if (ws.length) {
     const w = ws.find(x => x.id === worldChoice) || ws[0];
     out.push({ id: 'world', cls: 'world', modes: ws.map(x => x.mode).sort((a, b) => a - b), label: 'WORLD #' + w.rnk });
