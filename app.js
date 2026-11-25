@@ -170,7 +170,7 @@ function sinceIso(tab) {
 async function fetchBoard(mode, tab) {
   const k = mode + '|' + tab, c = cache[k];
   if (c && Date.now() - c.t < 15000) return c.rows;
-  let q = SUPABASE.url + '/rest/v1/scores?select=name,score,user_id&mode=eq.' + mode + '&order=score.desc,created_at.asc&limit=10';
+  let q = SUPABASE.url + '/rest/v1/scores?select=username,score,user_id&mode=eq.' + mode + '&order=score.desc,created_at.asc&limit=10';
   const s = sinceIso(tab); if (s) q += '&created_at=gte.' + encodeURIComponent(s);
   const r = await fetch(q, { headers: headers() });
   if (!r.ok) throw new Error('board ' + r.status);
@@ -181,7 +181,7 @@ function logRun(mode, sc, ms) {
   for (const k in cache) delete cache[k];
   return fetch(SUPABASE.url + '/rest/v1/scores', {
     method: 'POST', headers: { ...jhead(), Prefer: 'return=minimal' },
-    body: JSON.stringify({ user_id: me.id, name: me.username, mode, score: sc, misses: ms })
+    body: JSON.stringify({ user_id: me.id, username: me.username, mode, score: sc, misses: ms })
   }).then(r => r.ok ? 'ok' : 'fail').catch(() => 'fail');
 }
 function LB_HTML(body) {
@@ -205,7 +205,7 @@ function renderLb() {
   fetchBoard(mode, tab).then(async rows => {
     if (req !== lbReq) return; const b = $('lbbody'); if (!b) return;
     b.innerHTML = rows.length
-      ? '<ol>' + rows.map(r => '<li' + (me && r.user_id === me.id ? ' class="me"' : '') + '><span>' + esc((r.name || 'anon').slice(0, 16)) + '</span><b>' + (r.score | 0) + '</b></li>').join('') + '</ol>'
+      ? '<ol>' + rows.map(r => '<li' + (me && r.user_id === me.id ? ' class="me"' : '') + '><span>' + esc((r.username || 'anon').slice(0, 16)) + '</span><b>' + (r.score | 0) + '</b></li>').join('') + '</ol>'
       : '<div class="empty">no scores ' + (tab === 'day' ? 'today' : tab === 'week' ? 'this week' : 'yet') + '. be the first!</div>';
     const mine = await myRank(mode, tab);
     if (req !== lbReq || !mine) return;
@@ -285,12 +285,12 @@ function FRIENDS_HTML(inLobby) {
     (incoming.length ? '<b style="color:var(--gold)">' + incoming.length + ' request' + (incoming.length > 1 ? 's' : '') + '</b> \u00b7 ' : '') +
     friends.filter(f => online.has(f.id)).length + ' online</span></h4>' +
     reqHtml + list + pend +
-    '<div class="addrow"><input id="fadd" maxlength="16" placeholder="request by name"><button class="small" id="fgo">send</button></div><div id="ferr"></div></div>';
+    '<div class="addrow"><input id="fadd" maxlength="16" placeholder="REQUEST BY USERNAME" class="uc"><button class="small" id="fgo">send</button></div><div id="ferr"></div></div>';
 }
 function bindFriends(inLobby) {
   const go = $('fgo'), inp = $('fadd');
   if (go) go.onclick = async () => {
-    const n = (inp.value || '').trim(); if (!n) return;
+    const n = (inp.value || '').trim().toUpperCase(); if (!n) return;
     go.disabled = true;
     try {
       const out = await sendRequest(n);
@@ -327,12 +327,16 @@ async function fetchStats(ids) {
   const r = await rpc('player_banners', { ids });
   const rows = r.ok ? await r.json() : [];
   const by = {};
-  rows.forEach(x => { (by[x.uid] = by[x.uid] || {})[x.mode] = x; });
+  rows.forEach(x => {
+    const b = (by[x.uid] = by[x.uid] || {});
+    if (x.mode) b[x.mode] = x;
+    if (x.og) b.og = x.og;
+  });
   bannerCache[key] = { t: Date.now(), v: by };
   return by;
 }
 // rarity, rarest last — the sort below puts the rarest banner first
-const RARITY = ['common', 'uncommon', 'rare', 'epic', 'mythic'];
+const RARITY = ['common', 'uncommon', 'rare', 'epic', 'mythic', 'og'];
 const TIER_RARITY = ['common', 'uncommon', 'rare', 'epic'];
 const GAMES_TIERS = [[10, 'common'], [100, 'uncommon'], [1000, 'rare']];
 const WORLD_MIN_PLAYERS = 10;
@@ -358,6 +362,8 @@ function earnedBanners(st) {
   if (st[30] && st[30].clean_best >= 130) out.push({ id: 'flawless', rar: 'common', label: '🧊 Flawless' });
   if (st[20] && st[20].clean_best >= 125) out.push({ id: 'untouch', rar: 'epic', label: '💎 Untouchable' });
   if (st[10] && st[10].best >= 62 && st[20] && st[20].best >= 125 && st[30] && st[30].best >= 185) out.push({ id: 'crown', rar: 'epic', label: '👑 Triple crown' });
+  // one of the first 100 accounts ever made: numbered, permanent, finite
+  if (st.og) out.push({ id: 'og', rar: 'og', label: 'OG #' + st.og });
   return out.sort((a, b) => RARITY.indexOf(b.rar) - RARITY.indexOf(a.rar));
 }
 function pickShown(all, shown) {
@@ -454,8 +460,8 @@ async function loadSession() {
 function loginScreen(err, mode) {
   mode = mode || 'in';
   show('<h1 class="hero">Code Tiles</h1>' +
-    '<p>' + (mode === 'up' ? 'Pick a name and a password. No email, no recovery \u2014 lose the password and the account is gone.' : 'Sign in to keep your scores, banners and friends.') + '</p>' +
-    '<div class="row"><input id="u" maxlength="16" placeholder="name" autocomplete="username"></div>' +
+    '<p>' + (mode === 'up' ? 'Pick a username and a password. No email, no recovery \u2014 lose the password and the account is gone.' : 'Sign in to keep your scores, banners and friends.') + '</p>' +
+    '<div class="row"><input id="u" maxlength="16" placeholder="USERNAME" autocomplete="username" class="uc"></div>' +
     '<div class="row"><input id="p" type="password" maxlength="64" placeholder="password" autocomplete="current-password"></div>' +
     (err ? '<div class="err">' + esc(err) + '</div>' : '') +
     '<div class="row"><button class="primary" id="doit">' + (mode === 'up' ? 'Create account' : 'Sign in') + '</button></div>' +
@@ -463,8 +469,9 @@ function loginScreen(err, mode) {
     '<p>Passwords need 6 characters or more.</p>', true);
   $('swap').onclick = () => loginScreen('', mode === 'up' ? 'in' : 'up');
   const go = async () => {
-    const u = ($('u').value || '').trim(), p = $('p').value || '';
-    if (u.length < 2) return loginScreen('Name needs at least 2 characters.', mode);
+    const u = ($('u').value || '').trim().toUpperCase(), p = $('p').value || '';
+    if (u.length < 2) return loginScreen('Username needs at least 2 characters.', mode);
+    if (!/^[A-Z0-9_]+$/.test(u)) return loginScreen('Usernames can use letters, numbers and _ only.', mode);
     if (p.length < 6) return loginScreen('Password needs at least 6 characters.', mode);
     $('doit').disabled = true; $('doit').textContent = 'working\u2026';
     const c = client();
@@ -472,14 +479,14 @@ function loginScreen(err, mode) {
       if (mode === 'up') {
         const { data, error } = await c.auth.signUp({ email: emailFor(u), password: p });
         if (error) throw error;
-        if (!data.session) throw new Error('That name is taken.');
+        if (!data.session) throw new Error('That username is taken.');
         token = data.session.access_token;
         const r = await fetch(SUPABASE.url + '/rest/v1/profiles', { method: 'POST', headers: { ...jhead(), Prefer: 'return=representation' }, body: JSON.stringify({ id: data.session.user.id, username: u }) });
-        if (!r.ok) { await c.auth.signOut(); token = null; throw new Error('That name is taken.'); }
+        if (!r.ok) { await c.auth.signOut(); token = null; throw new Error('That username is taken.'); }
         me = { id: data.session.user.id, username: u };
       } else {
         const { data, error } = await c.auth.signInWithPassword({ email: emailFor(u), password: p });
-        if (error) throw new Error('Wrong name or password.');
+        if (error) throw new Error('Wrong username or password.');
         token = data.session.access_token;
         const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=id,username&id=eq.' + data.session.user.id, { headers: headers() });
         const rows = r.ok ? await r.json() : [];
@@ -520,7 +527,7 @@ function home() {
 }
 
 function friendsScreen() {
-  show('<h1>Friends</h1><p>Send a request by exact name. They have to accept before you are added.</p>' +
+  show('<h1>Friends</h1><p>Send a request by exact username. They have to accept before you are added.</p>' +
     FRIENDS_HTML(false) + '<button class="ghost" id="bk">Back</button>', true);
   bindFriends(false);
   $('bk').onclick = home;
@@ -548,7 +555,7 @@ async function profileScreen() {
     '</div><div class="colmain" style="min-width:280px">' +
       '<div class="friends"><h4>BANNERS <span style="color:var(--dim);font-weight:500">pick up to 3</span></h4>' +
       '<div class="bnpicks">' + bannerList + '</div>' +
-      '<div id="bsave" class="empty">these show under your name in the lobby</div></div>' +
+      '<div id="bsave" class="empty">these show under your username in the lobby</div></div>' +
     '</div></div>' +
     '<button class="ghost" id="bk">Back</button>', true);
   $('bk').onclick = home;
