@@ -167,6 +167,15 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 .wb.w100 { color:#d7e3f2; text-shadow:0 1px 2px rgba(0,0,0,.5);
   background:linear-gradient(115deg,#222d3d 0%,#394a61 50%,#1b2430 100%);
   filter:drop-shadow(0 0 6px rgba(90,130,180,.35)); }
+/* a day or a week is not a lifetime: flat plates, no shine, and set smaller */
+.wb.wd, .wb.wk { padding:6px 12px; font-size:8px; font-weight:900; }
+.wb.wd .lv, .wb.wk .lv { animation:none; opacity:.55; }
+.wb.wd { color:#07222f; text-shadow:0 1px 0 rgba(255,255,255,.45);
+  background:linear-gradient(115deg,#a9ddf5 0%,#79c7ea 48%,#9ad6f2 100%);
+  filter:drop-shadow(0 0 5px rgba(120,200,240,.35)); }
+.wb.wk { color:#f3ebff; text-shadow:0 1px 2px rgba(0,0,0,.55);
+  background:linear-gradient(115deg,#4a2a79 0%,#7846c2 48%,#3c2162 100%);
+  filter:drop-shadow(0 0 5px rgba(150,100,220,.4)); }
 @media (prefers-reduced-motion: reduce) { .wb, .wb .lv { animation:none; } }
 
 
