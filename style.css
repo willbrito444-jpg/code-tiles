@@ -259,6 +259,17 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
   to   { transform:scaleY(1.12); }
 }
 .slot.bnr-world .ribbon { animation-duration:.42s; }
+/* the mascot for the mode you placed in, each moving its own way, in a lane of its own */
+.slot.bnr-world { padding-bottom:20px; }
+.slot.bnr-world .nm::after { content:''; position:absolute; bottom:2px; z-index:1;
+  font-size:17px; line-height:1; pointer-events:none; filter:drop-shadow(0 2px 3px rgba(0,0,0,.8)); }
+/* all three face left, so all three travel left */
+@keyframes mascotrun { from { left:108%; } to { left:-13%; } }
+@keyframes mascothop { from { transform:translateY(0); } to { transform:translateY(-11px); } }
+@keyframes mascotplod { from { transform:translateY(0); } to { transform:translateY(-2px); } }
+.slot.wm10 .nm::after { content:'\1F3CE\FE0F'; animation:mascotrun 1.5s linear infinite; }
+.slot.wm20 .nm::after { content:'\1F407'; animation:mascotrun 4.2s linear infinite, mascothop .36s ease-in-out infinite alternate; }
+.slot.wm30 .nm::after { content:'\1F422'; animation:mascotrun 13s linear infinite, mascotplod 1.6s ease-in-out infinite alternate; }
 .slot.bnr-world::after { content:''; position:absolute; left:18px; bottom:12px; width:4px; height:4px;
   border-radius:50%; background:#ffe0a8; pointer-events:none;
   box-shadow:28px 6px 0 #ff8a3c, 61px -3px 0 #ffc06b, 97px 7px 0 #ff5a28, 133px 1px 0 #ffe0a8,
@@ -286,8 +297,7 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
   .slot.bnr-og, .slot.bnr-world { animation:none; }
   .slot.bnr-world::before, .slot.bnr-world::after { animation:none; }
   .slot.bnr-world::after { opacity:0; }
-  .slot.bnr-world::before, .slot.bnr-world::after { animation:none; }
-  .slot.bnr-world::after { opacity:0; }
+  .slot.bnr-world .nm::after { display:none; }
 }
 
 @media (prefers-reduced-motion: reduce) { .r-epic, .r-mythic, .r-og { animation:none; } }
