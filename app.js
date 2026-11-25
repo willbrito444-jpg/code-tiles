@@ -262,8 +262,8 @@ function boardScreen(mode, tab) {
   bsMode = mode || bsMode || DURATION; bsTab = tab || bsTab || lbTab;
   running = false; $('mpbar').style.display = 'none';
   const modes = [10, 20, 30].map(m => '<button class="ghost fmtbtn' + (bsMode === m ? ' on' : '') + '" data-bm="' + m + '">' + MODE_ICON[m] + ' ' + m + 's</button>').join('');
-  const tabs = [['day', 'today'], ['week', 'this week'], ['all', 'lifetime']].map(t => '<button class="ghost fmtbtn' + (bsTab === t[0] ? ' on' : '') + '" data-bt="' + t[0] + '">' + t[1] + '</button>').join('');
-  show('<h1>Leaderboard</h1><p class="tag">top 100 · one row per player, their best run</p>' +
+  const tabs = [['day', 'today'], ['week', 'this week'], ['all', 'all time']].map(t => '<button class="ghost fmtbtn' + (bsTab === t[0] ? ' on' : '') + '" data-bt="' + t[0] + '">' + t[1] + '</button>').join('');
+  show('<h1>Leaderboard</h1><p class="tag">top 100 runs · every game you log can place</p>' +
     '<div class="row">' + modes + '</div><div class="row">' + tabs + '</div>' +
     '<div id="bigboard"><div class="waiting">loading…</div></div>' +
     '<button class="ghost" id="bk">Back</button>', true);
