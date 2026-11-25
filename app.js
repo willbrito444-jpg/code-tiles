@@ -21,6 +21,8 @@ const jhead = () => ({ ...headers(), 'Content-Type': 'application/json' });
 
 /* ---------- tile icons ---------- */
 // themes swap the glyphs only: lane colours and the dark glyph fill stay as they are
+// m:1 marks a picture glyph, which ignores fillStyle — MONO draws it dark instead
+const MONO = 'grayscale(1) brightness(.5) contrast(1.6)';
 const THEMES = [
   { id: 'brackets', name: 'Brackets', g: ['(', '[', '{'] },
   { id: 'tags', name: 'Tags', g: ['<', '/', '>'] },
@@ -28,17 +30,28 @@ const THEMES = [
   { id: 'shell', name: 'Shell', g: ['$', '~', '>'] },
   { id: 'logic', name: 'Logic', g: ['&', '|', '!'] },
   { id: 'math', name: 'Math', g: ['+', '-', '*'] },
-  { id: 'dots', name: 'Punctuation', g: [';', ':', '.'] }
+  { id: 'dots', name: 'Punctuation', g: [';', ':', '.'] },
+  { id: 'greek', name: 'Greek', g: ['π', 'λ', 'Ω'] },
+  { id: 'calc', name: 'Calculus', g: ['∫', '∑', '√'] },
+  { id: 'sets', name: 'Sets', g: ['∈', '∪', '∅'] },
+  { id: 'cards', name: 'Cards', g: ['♠', '♥', '♦'] },
+  { id: 'chess', name: 'Chess', g: ['♞', '♜', '♝'] },
+  { id: 'pets', name: 'Pets', m: 1, g: ['🐱', '🐶', '🐰'] },
+  { id: 'farm', name: 'Farm', m: 1, g: ['🐮', '🐷', '🐔'] },
+  { id: 'wild', name: 'Wild', m: 1, g: ['🦊', '🐼', '🐸'] },
+  { id: 'space', name: 'Space', m: 1, g: ['🌙', '⭐', '🪐'] },
+  { id: 'food', name: 'Food', m: 1, g: ['🍕', '🍔', '🍩'] }
 ];
-let GLYPH = ['(', '[', '{'], THEME = 'brackets';
+let GLYPH = ['(', '[', '{'], THEME = 'brackets', GMONO = false;
 function applyTheme(id) {
   const t = THEMES.find(x => x.id === id) || THEMES[0];
-  THEME = t.id; GLYPH = t.g.slice();
+  THEME = t.id; GLYPH = t.g.slice(); GMONO = !!t.m;
   ls.set('codeTilesTheme', THEME);
+  const pad = $('pad'); if (pad) pad.classList.toggle('mono', GMONO);
   document.querySelectorAll('#pad button').forEach((b, i) => { if (b.firstChild) b.firstChild.nodeValue = GLYPH[i]; });
 }
 const THEME_HTML = () => '<div id="thm" class="bnpicks">' + THEMES.map(t =>
-  '<button class="thmpick' + (THEME === t.id ? ' on' : '') + '" data-t="' + t.id + '">' +
+  '<button class="thmpick' + (t.m ? ' mono' : '') + (THEME === t.id ? ' on' : '') + '" data-t="' + t.id + '">' +
   '<span class="thmg">' + t.g.map(g => '<i>' + esc(g) + '</i>').join('') + '</span>' +
   '<span class="thmn">' + t.name + '</span></button>').join('') + '</div>';
 function bindTheme() {
@@ -167,7 +180,10 @@ function draw() {
     ctx.globalAlpha = i === 0 ? 1 : Math.max(.35, 1 - i * .12);
     const g = ctx.createLinearGradient(0, y, 0, y + TILE_H); g.addColorStop(0, c); g.addColorStop(1, c + '99');
     ctx.fillStyle = g; roundRect(x, y, w, TILE_H - 6, 10); ctx.fill();
-    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.font = "800 40px 'JetBrains Mono',ui-monospace,monospace"; ctx.fillText(GLYPH[lane], x + w / 2, y + TILE_H / 2 - 3);
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.font = "800 40px 'JetBrains Mono',ui-monospace,monospace";
+    if (GMONO) ctx.filter = MONO;
+    ctx.fillText(GLYPH[lane], x + w / 2, y + TILE_H / 2 - 3);
+    if (GMONO) ctx.filter = 'none';
     if (i === 0 && freeze <= 0) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; roundRect(x, y, w, TILE_H - 6, 10); ctx.stroke(); ctx.lineWidth = 1; }
     ctx.globalAlpha = 1;
   }
