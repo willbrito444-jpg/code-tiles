@@ -153,9 +153,9 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 
 
 /* ---- 1v1 duel screen ---- */
-.duel { display:flex; align-items:center; justify-content:center; gap:12px; margin:12px 0 6px; }
-.duel .dside { flex:1 1 0; min-width:0; max-width:290px; }
-.duel .dside .slot { margin-bottom:0; min-height:86px; }
+.duel { display:flex; align-items:center; justify-content:center; gap:12px; margin:12px 0 6px; width:100%; max-width:760px; }
+.duel .dside { flex:1 1 0; min-width:0; max-width:360px; }
+.duel .dside .slot { margin-bottom:0; min-height:96px; }
 .vs { flex:0 0 auto; font-family:'Press Start 2P','JetBrains Mono',monospace; font-size:24px; line-height:1;
   background:linear-gradient(165deg,#ff6a00 0%,#ff8c1a 28%,#ffb627 55%,#ffd93b 78%,#fff07a 100%);
   -webkit-background-clip:text; background-clip:text; color:transparent;
