@@ -217,56 +217,148 @@ function bindModes() {
 function show(html, top) { msg.innerHTML = html; msg.className = top ? 'top' : ''; msg.style.display = 'flex'; }
 
 /* ---------- friends ---------- */
-let friends = [], online = new Set();
+let friends = [], online = new Set(), reqs = [];
+const rpc = (fn, body) => fetch(SUPABASE.url + '/rest/v1/rpc/' + fn, { method: 'POST', headers: jhead(), body: JSON.stringify(body || {}) });
 async function loadFriends() {
   if (!me) return [];
   try {
     const r = await fetch(SUPABASE.url + '/rest/v1/friends?select=friend_id&user_id=eq.' + me.id, { headers: headers() });
     const rows = await r.json();
     const ids = rows.map(x => x.friend_id);
-    if (!ids.length) { friends = []; return friends; }
-    const p = await fetch(SUPABASE.url + '/rest/v1/profiles?select=id,username&id=in.(' + ids.join(',') + ')', { headers: headers() });
-    friends = await p.json();
+    if (!ids.length) friends = [];
+    else {
+      const p = await fetch(SUPABASE.url + '/rest/v1/profiles?select=id,username&id=in.(' + ids.join(',') + ')', { headers: headers() });
+      friends = await p.json();
+    }
   } catch (e) { friends = []; }
+  try { const q = await rpc('my_requests'); reqs = q.ok ? await q.json() : []; } catch (e) { reqs = []; }
   return friends;
 }
-async function addFriend(name) {
-  const r = await fetch(SUPABASE.url + '/rest/v1/rpc/find_player', { method: 'POST', headers: jhead(), body: JSON.stringify({ q: name }) });
-  const rows = r.ok ? await r.json() : [];
-  if (!rows.length) throw new Error('No player called ' + name);
-  if (rows[0].id === me.id) throw new Error('That is you.');
-  const ins = await fetch(SUPABASE.url + '/rest/v1/friends', { method: 'POST', headers: { ...jhead(), Prefer: 'return=minimal' }, body: JSON.stringify({ user_id: me.id, friend_id: rows[0].id }) });
-  if (!ins.ok && ins.status !== 409) throw new Error('Could not add them');
+async function sendRequest(name) {
+  const r = await rpc('send_friend_request', { target: name });
+  if (!r.ok) throw new Error('Could not send that');
+  const out = (await r.json() + '').replace(/"/g, '');
+  if (out === 'nouser') throw new Error('No player called ' + name);
+  if (out === 'self') throw new Error('That is you.');
+  if (out === 'already') throw new Error('Already friends.');
+  return out;
 }
-async function removeFriend(id) {
-  await fetch(SUPABASE.url + '/rest/v1/friends?user_id=eq.' + me.id + '&friend_id=eq.' + id, { method: 'DELETE', headers: headers() });
+async function acceptRequest(id) { await rpc('accept_friend_request', { req_from: id }); }
+async function declineRequest(id, dir) {
+  const q = dir === 'in' ? 'from_id=eq.' + id + '&to_id=eq.' + me.id : 'from_id=eq.' + me.id + '&to_id=eq.' + id;
+  await fetch(SUPABASE.url + '/rest/v1/friend_requests?' + q, { method: 'DELETE', headers: headers() });
 }
+async function removeFriend(id) { await rpc('remove_friend', { other: id }); }
 function FRIENDS_HTML(inLobby) {
+  const incoming = reqs.filter(r => r.direction === 'in'), outgoing = reqs.filter(r => r.direction === 'out');
+  const reqHtml = incoming.length ? '<div class="reqs">' + incoming.map(r =>
+    '<div class="f"><div class="n">' + esc(r.username) + '</div>' +
+    '<button class="small acc" data-acc="' + r.other_id + '">accept</button>' +
+    '<button class="small" data-dec="' + r.other_id + '">\u00d7</button></div>').join('') + '</div>' : '';
   const list = friends.length ? friends.map(f => {
     const on = online.has(f.id);
     return '<div class="f"><div class="dot' + (on ? ' on' : '') + '"></div><div class="n">' + esc(f.username) + '</div>' +
       '<div class="bns"></div>' +
       (inLobby && on ? '<button class="small" data-inv="' + f.id + '">invite</button>' : '') +
       '<button class="small" data-unfriend="' + f.id + '" title="remove">\u00d7</button></div>';
-  }).join('') : '<div class="empty">no friends yet \u2014 add someone by their exact name</div>';
-  return '<div class="friends" id="fr"><h4>FRIENDS <span style="color:var(--dim);font-weight:500">' + friends.filter(f => online.has(f.id)).length + ' online</span></h4>' +
-    list + '<div class="addrow"><input id="fadd" maxlength="16" placeholder="add by name"><button class="small" id="fgo">add</button></div><div id="ferr"></div></div>';
+  }).join('') : '<div class="empty">no friends yet \u2014 send someone a request</div>';
+  const pend = outgoing.length ? '<div class="empty">pending: ' + outgoing.map(r => esc(r.username)).join(', ') + '</div>' : '';
+  return '<div class="friends" id="fr"><h4>FRIENDS <span style="color:var(--dim);font-weight:500">' +
+    (incoming.length ? '<b style="color:var(--gold)">' + incoming.length + ' request' + (incoming.length > 1 ? 's' : '') + '</b> \u00b7 ' : '') +
+    friends.filter(f => online.has(f.id)).length + ' online</span></h4>' +
+    reqHtml + list + pend +
+    '<div class="addrow"><input id="fadd" maxlength="16" placeholder="request by name"><button class="small" id="fgo">send</button></div><div id="ferr"></div></div>';
 }
 function bindFriends(inLobby) {
   const go = $('fgo'), inp = $('fadd');
   if (go) go.onclick = async () => {
     const n = (inp.value || '').trim(); if (!n) return;
     go.disabled = true;
-    try { await addFriend(n); inp.value = ''; await loadFriends(); refreshFriends(inLobby); }
-    catch (e) { const er = $('ferr'); if (er) er.innerHTML = '<span class="err">' + esc(e.message) + '</span>'; go.disabled = false; }
+    try {
+      const out = await sendRequest(n);
+      inp.value = '';
+      if (out === 'sent') { const t = await findId(n); if (t) pingUser(t, 'friendreq'); }
+      await loadFriends(); refreshFriends(inLobby);
+      const er = $('ferr'); if (er) er.innerHTML = '<span class="ok">' + (out === 'friends' ? 'you are now friends' : 'request sent') + '</span>';
+    } catch (e) { const er = $('ferr'); if (er) er.innerHTML = '<span class="err">' + esc(e.message) + '</span>'; go.disabled = false; }
   };
   if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
+  document.querySelectorAll('[data-acc]').forEach(b => b.onclick = async () => { b.disabled = true; await acceptRequest(b.dataset.acc); pingUser(b.dataset.acc, 'friendok'); await loadFriends(); refreshFriends(inLobby); });
+  document.querySelectorAll('[data-dec]').forEach(b => b.onclick = async () => { b.disabled = true; await declineRequest(b.dataset.dec, 'in'); await loadFriends(); refreshFriends(inLobby); });
   document.querySelectorAll('[data-unfriend]').forEach(b => b.onclick = async () => { await removeFriend(b.dataset.unfriend); await loadFriends(); refreshFriends(inLobby); });
   document.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => { MP.invite(b.dataset.inv); b.textContent = 'sent'; b.disabled = true; });
 }
 function refreshFriends(inLobby) {
   const el = $('fr'); if (!el) return;
   el.outerHTML = FRIENDS_HTML(inLobby); bindFriends(inLobby);
+}
+
+/* ---------- banners ---------- */
+const TIERS = {
+  10: [['bronze', 45], ['silver', 55], ['gold', 62], ['insane', 70]],
+  20: [['bronze', 90], ['silver', 110], ['gold', 125], ['insane', 142]],
+  30: [['bronze', 130], ['silver', 160], ['gold', 185], ['insane', 210]]
+};
+const MODE_ICON = { 10: '\uD83C\uDFCE\uFE0F', 20: '\uD83D\uDC07', 30: '\uD83D\uDC22' };
+const bannerCache = {};
+async function fetchStats(ids) {
+  if (!ids.length) return {};
+  const key = ids.slice().sort().join(',');
+  const c = bannerCache[key];
+  if (c && Date.now() - c.t < 20000) return c.v;
+  const r = await rpc('player_banners', { ids });
+  const rows = r.ok ? await r.json() : [];
+  const by = {};
+  rows.forEach(x => { (by[x.uid] = by[x.uid] || {})[x.mode] = x; });
+  bannerCache[key] = { t: Date.now(), v: by };
+  return by;
+}
+function earnedBanners(st) {
+  if (!st) return [];
+  const out = [];
+  [10, 20, 30].forEach(m => {
+    const s2 = st[m]; if (!s2) return;
+    const counts = [s2.c1, s2.c2, s2.c3, s2.c4];
+    for (let i = TIERS[m].length - 1; i >= 0; i--) {
+      if (counts[i] > 0) { out.push({ id: 't' + m + i, label: TIERS[m][i][1] + ' ' + MODE_ICON[m] + ' \u00d7' + counts[i] }); break; }
+    }
+  });
+  if (st[30] && st[30].clean_best >= 130) out.push({ id: 'flawless', label: '\uD83E\uDDCA Flawless' });
+  if (st[20] && st[20].clean_best >= 125) out.push({ id: 'untouch', label: '\uD83D\uDC8E Untouchable' });
+  if (st[10] && st[10].best >= 62 && st[20] && st[20].best >= 125 && st[30] && st[30].best >= 185) out.push({ id: 'crown', label: '\uD83D\uDC51 Triple crown' });
+  return out;
+}
+function pickShown(all, shown) {
+  const chosen = (shown || []).map(id => all.find(b => b.id === id)).filter(Boolean);
+  return (chosen.length ? chosen : all).slice(0, 3);
+}
+let myStats = {}, myShown = [];
+async function loadMyProfile() {
+  if (!me) return;
+  const by = await fetchStats([me.id]); myStats = by[me.id] || {};
+  try {
+    const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=shown&id=eq.' + me.id, { headers: headers() });
+    const rows = r.ok ? await r.json() : [];
+    myShown = rows.length && rows[0].shown ? rows[0].shown : [];
+  } catch (e) { myShown = []; }
+}
+async function saveShown(list) {
+  myShown = list;
+  await fetch(SUPABASE.url + '/rest/v1/profiles?id=eq.' + me.id, { method: 'PATCH', headers: { ...jhead(), Prefer: 'return=minimal' }, body: JSON.stringify({ shown: list }) });
+}
+async function findId(name) {
+  try { const r = await rpc('find_player', { q: name }); const rows = r.ok ? await r.json() : []; return rows.length ? rows[0].id : null; }
+  catch (e) { return null; }
+}
+function pingUser(uid, event) {
+  const c = client(); if (!c) return;
+  const ch = c.channel('inv-' + uid);
+  ch.subscribe(st => {
+    if (st === 'SUBSCRIBED') {
+      ch.send({ type: 'broadcast', event, payload: { from: me.username } });
+      setTimeout(() => { try { ch.unsubscribe(); } catch (e) {} }, 1500);
+    }
+  });
 }
 
 /* ---------- presence + invites ---------- */
@@ -281,7 +373,21 @@ function startPresence() {
   }).subscribe(s => { if (s === 'SUBSCRIBED') onlineCh.track({ id: me.id, name: me.username }); });
   if (invCh) { try { invCh.unsubscribe(); } catch (e) {} }
   invCh = c.channel('inv-' + me.id);
-  invCh.on('broadcast', { event: 'invite' }, ({ payload }) => toastInvite(payload)).subscribe();
+  invCh
+    .on('broadcast', { event: 'invite' }, ({ payload }) => toastInvite(payload))
+    .on('broadcast', { event: 'friendreq' }, ({ payload }) => toastMsg((payload && payload.from ? payload.from : 'Someone') + ' sent you a friend request'))
+    .on('broadcast', { event: 'friendok' }, ({ payload }) => toastMsg((payload && payload.from ? payload.from : 'Someone') + ' accepted your friend request'))
+    .subscribe();
+}
+async function toastMsg(text) {
+  const t = toastEl(), d = document.createElement('div');
+  d.className = 't';
+  d.innerHTML = '<div>' + esc(text) + '</div><div class="row"><button class="small" data-x="1">OK</button></div>';
+  t.appendChild(d);
+  beep(620, .1, 'triangle', .08);
+  d.querySelector('[data-x]').onclick = () => d.remove();
+  setTimeout(() => d.remove(), 20000);
+  await loadFriends(); refreshFriends(!!MP.code);
 }
 function toastEl() {
   let t = $('toast');
@@ -368,14 +474,62 @@ function home() {
   show('<h1 class="hero">Code Tiles</h1><div id="mascot"></div>' + MODES_HTML +
     '<p>Hit as many tiles as you can before the clock runs out. Press the key for the <b>lowest</b> tile\'s lane.</p>' +
     '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\u2694 Play a friend</button></div>' +
-    KEYS_HTML() +
-    '<div class="cols" style="max-width:640px"><div class="colmain" style="min-width:290px">' + LB_HTML() + '</div><div class="colmain" style="min-width:290px">' + FRIENDS_HTML(false) + '</div></div>' +
+    '<div class="row"><button class="ghost" id="prof">\uD83D\uDC64 Profile</button><button class="ghost" id="frs">\uD83D\uDC65 Friends' +
+      (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
+    KEYS_HTML() + LB_HTML() +
     '<p>Signed in as <b>' + esc(me ? me.username : '') + '</b> \u00b7 <a href="#" id="out" style="color:var(--dim)">sign out</a><br>' +
     'A wrong key <b style="color:#bfe8ff">freezes you</b>: 0.5s / 1s / 1.5s \u00b7 <kbd>Space</kbd> start \u00b7 <kbd>R</kbd> restart \u00b7 <kbd>Esc</kbd> home</p>', true);
   $('go').onclick = () => startRun();
   $('mp').onclick = () => MP.menu();
+  $('prof').onclick = () => profileScreen();
+  $('frs').onclick = () => friendsScreen();
   $('out').onclick = e => { e.preventDefault(); signOut(); };
-  bindModes(); bindKeys(); bindFriends(false); setMode(DURATION); hud(); draw();
+  bindModes(); bindKeys(); setMode(DURATION); hud(); draw();
+}
+
+function friendsScreen() {
+  show('<h1>Friends</h1><p>Send a request by exact name. They have to accept before you are added.</p>' +
+    FRIENDS_HTML(false) + '<button class="ghost" id="bk">Back</button>', true);
+  bindFriends(false);
+  $('bk').onclick = home;
+}
+
+async function profileScreen() {
+  show('<h1>Profile</h1><div class="waiting">loading\u2026</div>', true);
+  await loadMyProfile();
+  const all = earnedBanners(myStats), chosen = pickShown(all, myShown).map(b => b.id);
+  const statLine = [10, 20, 30].map(m => {
+    const s2 = myStats[m];
+    return '<div class="f"><div class="n">' + MODE_ICON[m] + ' ' + m + 's</div><b>' + (s2 ? s2.best : '\u2014') + '</b></div>';
+  }).join('');
+  const next = [10, 20, 30].map(m => {
+    const s2 = myStats[m], bb = s2 ? s2.best : 0;
+    const nx = TIERS[m].find(t => bb < t[1]);
+    return nx ? '<div class="empty">' + MODE_ICON[m] + ' next: <b>' + nx[1] + '</b> for ' + nx[0] + '</div>' : '<div class="empty">' + MODE_ICON[m] + ' every tier cleared</div>';
+  }).join('');
+  const bannerList = all.length
+    ? all.map(b => '<button class="bnpick small' + (chosen.includes(b.id) ? ' on' : '') + '" data-b="' + b.id + '">' + b.label + '</button>').join('')
+    : '<div class="empty">no banners yet \u2014 they unlock from your scores</div>';
+  show('<h1>Profile</h1><h2>' + esc(me.username) + '</h2>' +
+    '<div class="cols" style="max-width:660px"><div class="colmain" style="min-width:280px">' +
+      '<div class="friends"><h4>PERSONAL BESTS</h4>' + statLine + next + '</div>' +
+    '</div><div class="colmain" style="min-width:280px">' +
+      '<div class="friends"><h4>BANNERS <span style="color:var(--dim);font-weight:500">pick up to 3</span></h4>' +
+      '<div class="bnpicks">' + bannerList + '</div>' +
+      '<div id="bsave" class="empty">these show under your name in the lobby</div></div>' +
+    '</div></div>' +
+    '<button class="ghost" id="bk">Back</button>', true);
+  $('bk').onclick = home;
+  document.querySelectorAll('.bnpick').forEach(b => b.onclick = async () => {
+    const id = b.dataset.b;
+    let list = [...document.querySelectorAll('.bnpick.on')].map(x => x.dataset.b);
+    if (list.includes(id)) list = list.filter(x => x !== id);
+    else { if (list.length >= 3) { $('bsave').innerHTML = '<span class="err">three at a time \u2014 unpick one first</span>'; return; } list.push(id); }
+    document.querySelectorAll('.bnpick').forEach(x => x.classList.toggle('on', list.includes(x.dataset.b)));
+    $('bsave').innerHTML = '<span class="waiting">saving\u2026</span>';
+    try { await saveShown(list); $('bsave').innerHTML = '<span class="ok">saved \u2713</span>'; }
+    catch (e) { $('bsave').innerHTML = '<span class="err">could not save</span>'; }
+  });
 }
 
 function soloResult(pb, logging) {
@@ -476,6 +630,7 @@ const MP = {
     const i = list.findIndex(p => p.pid === me.id);
     this.myTeam = i < 0 ? 'A' : (i % 2 === 0 ? 'A' : 'B');
     this.repaint();
+    this.loadRosterBanners();
     if (this.host && this.phase === 'between' && this.allReady()) { this.round++; this.nextRound(); }
   },
   teamOf(i) { return i % 2 === 0 ? 'A' : 'B'; },
@@ -513,14 +668,34 @@ const MP = {
     const log = $('chatlog'); if (log) log.scrollTop = log.scrollHeight;
   },
 
+  banners: {},
+  async loadRosterBanners() {
+    const ids = this.roster.map(p => p.pid);
+    if (!ids.length) return;
+    const key = ids.slice().sort().join(',');
+    if (this.bannerKey === key) return;
+    this.bannerKey = key;
+    try {
+      const [stats, profs] = await Promise.all([
+        fetchStats(ids),
+        fetch(SUPABASE.url + '/rest/v1/profiles?select=id,shown&id=in.(' + ids.join(',') + ')', { headers: headers() }).then(r => r.ok ? r.json() : [])
+      ]);
+      const shownBy = {}; profs.forEach(p => shownBy[p.id] = p.shown || []);
+      const out = {};
+      ids.forEach(id => { out[id] = pickShown(earnedBanners(stats[id]), shownBy[id]); });
+      this.banners = out;
+      if (this.phase === 'lobby') this.lobby();
+    } catch (e) {}
+  },
   slotHTML(t, n) {
     const mem = this.teamMembers(t); let h = '';
     for (let i = 0; i < n; i++) {
       const p = mem[i];
+      const bns = p && this.banners[p.pid] ? this.banners[p.pid].map(b => '<span class="bn">' + b.label + '</span>').join('') : '';
       h += p
         ? '<div class="slot filled"><div class="nm"><span>' + esc(p.name) + (p.pid === me.id ? ' <span class="you">(you)</span>' : '') + '</span>' +
           '<span class="rdy ' + (p.ready ? 'y' : 'n') + '">' + (p.ready ? 'READY' : 'not ready') + '</span></div>' +
-          '<div class="bns"></div></div>'
+          '<div class="bns">' + bns + '</div></div>'
         : '<div class="slot empty">waiting for a player\u2026</div>';
     }
     return h;
@@ -675,6 +850,6 @@ show('<h1 class="hero">Code Tiles</h1><div class="waiting">loading\u2026</div>',
   for (let i = 0; i < 40 && !window.supabase; i++) await new Promise(r => setTimeout(r, 100));
   if (!window.supabase) { show('<h1>Offline</h1><p>Could not reach the server. Reload to try again.</p>'); return; }
   const ok = await loadSession();
-  if (ok) { startPresence(); await loadFriends(); home(); } else loginScreen('', 'in');
+  if (ok) { startPresence(); await loadFriends(); await loadMyProfile(); home(); } else loginScreen('', 'in');
 })();
 })();
