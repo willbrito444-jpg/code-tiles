@@ -615,8 +615,8 @@ function home() {
   show('<div id="topbar">' + topbarInner() + '</div>' +
     '<h1 class="hero">Code Tiles</h1><div id="mascot"></div>' + MODES_HTML +
     '<p>Hit as many tiles as you can before the clock runs out. Press the key for the <b>lowest</b> tile\'s lane.</p>' +
-    '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\u2694 Play a friend</button></div>' +
-    '<div class="row"><button class="ghost" id="duel">\u2694 1v1</button></div>' +
+    '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\u2694\ufe0f Play a friend</button></div>' +
+    '<div class="row"><button class="ghost" id="duel">\u2694\ufe0f 1v1</button></div>' +
     '<div class="row"><button class="ghost" id="prof">\uD83D\uDC64 Profile</button><button class="ghost" id="frs">\uD83D\uDC65 Friends' +
       (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
     KEYS_HTML() + LB_HTML() +
@@ -697,7 +697,7 @@ function soloResult(pb, logging) {
     (frozenTotal > 0 ? '<br>projected without the ' + frozenTotal.toFixed(1) + ' s frozen: <b>' + (projected() || score) + '</b>' : '') + '</p>' +
     '<div id="logst" class="waiting">' + (worth ? 'logging\u2026' : 'no tiles hit — nothing to log') + '</div>' +
     LB_HTML() + MODES_HTML +
-    '<div class="row"><button class="primary" id="go">Again</button><button class="ghost" id="mp">\u2694 Play a friend</button></div>' +
+    '<div class="row"><button class="primary" id="go">Again</button><button class="ghost" id="mp">\u2694\ufe0f Play a friend</button></div>' +
     '<p><kbd>Space</kbd> again \u00b7 <kbd>Esc</kbd> home</p>');
   $('go').onclick = () => startRun();
   $('mp').onclick = () => MP.menu();
