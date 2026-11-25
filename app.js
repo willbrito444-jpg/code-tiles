@@ -824,11 +824,13 @@ function soloResult(pb, logging) {
 
 /* ================= MULTIPLAYER ================= */
 // one player's box: banner behind it, badges inside it
-// the ribbon stacks: the word on top, the number under it
+// the ribbon stacks: the word on top, larger, the number under it.
+// a long word (WORLD) is set smaller, or it outgrows the strip it sits in
 function ribLines(label) {
   const i = label.indexOf(' ');
-  return i < 0 ? '<b>' + esc(label) + '</b>'
-    : '<b>' + esc(label.slice(0, i)) + '</b><i>' + esc(label.slice(i + 1)) + '</i>';
+  if (i < 0) return '<b>' + esc(label) + '</b>';
+  const w = label.slice(0, i);
+  return '<b' + (w.length > 3 ? ' class="lng"' : '') + '>' + esc(w) + '</b><i>' + esc(label.slice(i + 1)) + '</i>';
 }
 function playerCardHTML(name, sk, badges, isMe, ready) {
   const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + ribLines(sk.label) + '</span>' : '';
