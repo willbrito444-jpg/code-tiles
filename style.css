@@ -43,8 +43,10 @@ button:disabled { opacity:.45; cursor:default; }
   100% { transform:translate( 45px,-28px) scale(1.2) rotate(8deg); }
 }
 #lb { width:300px; max-width:100%; text-align:left; font-size:12px; border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:rgba(255,255,255,.02); }
-#lb .lbt { color:var(--gold); font-weight:800; margin-bottom:4px; display:flex; justify-content:space-between; }
+#lb .lbt { color:var(--gold); font-weight:800; margin-bottom:4px; display:flex; justify-content:space-between;
+  width:100%; background:none; border:none; padding:0; font:inherit; font-weight:800; text-align:left; cursor:pointer; }
 #lb .lbt span { color:var(--dim); font-weight:500; }
+#lb .lbt:hover span { color:var(--fg); }
 #lb .tabs { display:flex; gap:4px; margin-bottom:6px; }
 #lb .tabs button { flex:1; padding:4px 0; font-size:11px; font-weight:800; color:var(--dim); border-radius:6px; }
 #lb .tabs button.on { color:#06111a; background:var(--acc); border-color:var(--acc); }
@@ -189,9 +191,12 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 /* ---- banners: the whole lobby box, worn one at a time ---- */
 .slot { position:relative; overflow:hidden; }
 /* the label sits to the right and bounces the same V as the home mascots */
-.slot .ribbon { position:absolute; right:16px; top:calc(50% - 11px); z-index:2; white-space:nowrap;
-  font-family:'Press Start 2P', 'JetBrains Mono', monospace; font-size:11px; line-height:1; letter-spacing:0;
-  animation:ogbound 1.05s infinite alternate; will-change:transform; }
+.slot .ribbon { position:absolute; right:18px; top:0; bottom:0; z-index:2; white-space:nowrap; pointer-events:none;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+  font-family:'Press Start 2P', 'JetBrains Mono', monospace; line-height:1; letter-spacing:0;
+  animation:ogslash 1.15s infinite alternate; will-change:transform; }
+.slot .ribbon b { font-size:14px; font-weight:400; }
+.slot .ribbon i { font-size:19px; font-style:normal; }
 .rb-og { color:#fffce8;
   text-shadow:2px 0 0 #2a0b3d, -2px 0 0 #2a0b3d, 0 2px 0 #2a0b3d, 0 -2px 0 #2a0b3d,
               2px 2px 0 #2a0b3d, -2px 2px 0 #2a0b3d, 2px -2px 0 #2a0b3d, -2px -2px 0 #2a0b3d,
@@ -200,13 +205,14 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
   text-shadow:2px 0 0 #3d0b0b, -2px 0 0 #3d0b0b, 0 2px 0 #3d0b0b, 0 -2px 0 #3d0b0b,
               2px 2px 0 #3d0b0b, -2px 2px 0 #3d0b0b, 2px -2px 0 #3d0b0b, -2px -2px 0 #3d0b0b,
               0 4px 6px rgba(0,0,0,.55); }
-@keyframes ogbound {
-  0%   { transform:translate(-10px,-8px) scale(1.14) rotate(-8deg); animation-timing-function:ease-in; }
-  50%  { transform:translate(  0px,  3px) scale(.9)  rotate(0deg) scaleY(.88); animation-timing-function:ease-out; }
-  100% { transform:translate( 10px,-8px) scale(1.14) rotate(8deg); }
+/* a backslash, not a V: biggest at the top left, smallest at the bottom right */
+@keyframes ogslash {
+  0%   { transform:translate(-6px,-10px) scale(1.2) rotate(-3deg); animation-timing-function:cubic-bezier(.5,0,.85,.4); }
+  68%  { transform:translate(  4px,  6px) scale(.95) rotate(2deg); animation-timing-function:cubic-bezier(.25,.9,.4,1); }
+  100% { transform:translate(  6px, 10px) scale(.88) rotate(3deg); }
 }
 /* the rainbow fills the whole box; a scrim keeps the name and badges readable */
-.slot.bnr-og { border-color:#9fe9ff; padding-right:104px;
+.slot.bnr-og { border-color:#9fe9ff; padding-right:116px;
   background:linear-gradient(100deg,#ff9ad5 0%,#ffd98a 16%,#a8ff9e 33%,#8ae7ff 50%,#c3a2ff 67%,#ffd98a 84%,#ff9ad5 100%);
   background-size:200% 100%;
   animation:ogfoilbox 6s linear infinite;
@@ -216,7 +222,7 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 .slot.bnr-og .you { color:#6b4300; }
 .slot.bnr-og .rdy { background:rgba(10,16,22,.72); border-color:rgba(10,16,22,.5); color:#eaf2fb; text-shadow:none; }
 .slot.bnr-og .rdy.y { background:rgba(8,46,26,.82); color:#8cf0ae; }
-.slot.bnr-world { border-color:#ff5252; padding-right:104px;
+.slot.bnr-world { border-color:#ff5252; padding-right:116px;
   background:linear-gradient(100deg,#7d0c0c 0%,#c41d1d 18%,#ff6b6b 36%,#c41d1d 54%,#7d0c0c 72%,#c41d1d 86%,#7d0c0c 100%);
   background-size:200% 100%;
   animation:worldfoilbox 3.4s linear infinite;
@@ -238,6 +244,18 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 
 @media (prefers-reduced-motion: reduce) { .r-epic, .r-mythic, .r-og { animation:none; } }
 /* your standing, pinned under the top 10 */
+/* the full board: one row per player, your own row pinned under the hundredth */
+#bigboard { width:100%; max-width:430px; }
+ol.bb { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px; max-height:46vh; overflow:auto; }
+ol.bb.pinned { max-height:none; overflow:visible; }
+ol.bb li { display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:8px;
+  background:rgba(255,255,255,.03); font-size:13px; color:var(--fg); }
+ol.bb li .rk { min-width:46px; font-weight:800; font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums; }
+ol.bb li .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+ol.bb li b { font-variant-numeric:tabular-nums; }
+ol.bb li.g .rk { color:#ffd84d; } ol.bb li.s .rk { color:#d8e2ee; } ol.bb li.b .rk { color:#e0a06a; }
+ol.bb li.me { background:rgba(92,200,255,.12); outline:1px solid rgba(92,200,255,.35); color:var(--acc); font-weight:800; }
+ol.bb li.me .rk { color:var(--acc); }
 .lbgap { text-align:center; color:#46525f; font-size:13px; letter-spacing:2px; line-height:1; padding:3px 0 1px; }
 .myrank { display:flex; align-items:center; gap:8px; padding:5px 9px; border-radius:8px; margin-top:2px;
   background:#16202c; border:1px solid #2f506b; }
