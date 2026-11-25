@@ -348,7 +348,7 @@ const RARITY = ['common', 'uncommon', 'rare', 'epic', 'mythic', 'og'];
 const TIER_RARITY = ['common', 'uncommon', 'rare', 'epic'];
 const GAMES_TIERS = [[10, 'common'], [100, 'uncommon'], [1000, 'rare']];
 const DUEL_TIERS = [[10, 'common'], [50, 'uncommon'], [250, 'rare']];
-const WORLD_MIN_PLAYERS = 10;
+const WORLD_MIN_PLAYERS = 1;
 // every banner a player has actually earned, best tier per mode plus specials
 function earnedBanners(st) {
   if (!st) return [];
