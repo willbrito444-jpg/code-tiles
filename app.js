@@ -366,19 +366,38 @@ function earnedBanners(st) {
   if (st.og) out.push({ id: 'og', rar: 'og', label: 'OG #' + st.og });
   return out.sort((a, b) => RARITY.indexOf(b.rar) - RARITY.indexOf(a.rar));
 }
+// banners dress the whole lobby box; badges are the pills inside it
+function earnedSkins(st) {
+  const out = [{ id: 'none', cls: 'none', label: 'Plain' }];
+  if (!st) return out;
+  if (st.og) out.push({ id: 'og', cls: 'og', label: 'OG #' + st.og });
+  const ranks = [10, 20, 30].map(m => st[m] && st[m].players >= WORLD_MIN_PLAYERS && st[m].rnk <= 100 ? st[m].rnk : 0).filter(Boolean);
+  if (ranks.length) out.push({ id: 'world', cls: 'world', label: 'WORLD #' + Math.min.apply(null, ranks) });
+  return out;
+}
+// only ever wear a banner you have actually earned
+function pickSkin(st, id) {
+  const all = earnedSkins(st);
+  return all.find(x => x.id === id) || all[0];
+}
 function pickShown(all, shown) {
   const chosen = (shown || []).map(id => all.find(b => b.id === id)).filter(Boolean);
   return (chosen.length ? chosen : all).slice(0, 3);
 }
-let myStats = {}, myShown = [];
+let myStats = {}, myShown = [], myBanner = 'none';
 async function loadMyProfile() {
   if (!me) return;
   const by = await fetchStats([me.id]); myStats = by[me.id] || {};
   try {
-    const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=shown&id=eq.' + me.id, { headers: headers() });
+    const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=shown,banner&id=eq.' + me.id, { headers: headers() });
     const rows = r.ok ? await r.json() : [];
     myShown = rows.length && rows[0].shown ? rows[0].shown : [];
-  } catch (e) { myShown = []; }
+    myBanner = rows.length && rows[0].banner ? rows[0].banner : 'none';
+  } catch (e) { myShown = []; myBanner = 'none'; }
+}
+async function saveBanner(id) {
+  myBanner = id;
+  await fetch(SUPABASE.url + '/rest/v1/profiles?id=eq.' + me.id, { method: 'PATCH', headers: { ...jhead(), Prefer: 'return=minimal' }, body: JSON.stringify({ banner: id }) });
 }
 async function saveShown(list) {
   myShown = list;
@@ -537,6 +556,8 @@ async function profileScreen() {
   show('<h1>Profile</h1><div class="waiting">loading\u2026</div>', true);
   await loadMyProfile();
   const all = earnedBanners(myStats), chosen = pickShown(all, myShown).map(b => b.id);
+  const skins = earnedSkins(myStats), wearing = pickSkin(myStats, myBanner).id;
+  const skinList = skins.map(x => '<button class="bnpick skinpick' + (x.cls !== 'none' ? ' rb-' + x.cls : '') + (x.id === wearing ? ' on' : '') + '" data-s="' + x.id + '">' + x.label + '</button>').join('');
   const statLine = [10, 20, 30].map(m => {
     const s2 = myStats[m];
     return '<div class="f"><div class="n">' + MODE_ICON[m] + ' ' + m + 's</div><b>' + (s2 ? s2.best : '\u2014') + '</b></div>';
@@ -556,15 +577,24 @@ async function profileScreen() {
       '<div class="friends"><h4>BANNERS <span style="color:var(--dim);font-weight:500">pick up to 3</span></h4>' +
       '<div class="bnpicks">' + bannerList + '</div>' +
       '<div id="bsave" class="empty">these show under your username in the lobby</div></div>' +
+      '<div class="friends"><h4>BANNER <span style="color:var(--dim);font-weight:500">pick one</span></h4>' +
+      '<div class="bnpicks">' + skinList + '</div>' +
+      '<div id="ssave" class="empty">this dresses your whole box in the lobby</div></div>' +
     '</div></div>' +
     '<button class="ghost" id="bk">Back</button>', true);
   $('bk').onclick = home;
-  document.querySelectorAll('.bnpick').forEach(b => b.onclick = async () => {
+  document.querySelectorAll('.skinpick').forEach(b => b.onclick = async () => {
+    document.querySelectorAll('.skinpick').forEach(x => x.classList.toggle('on', x === b));
+    $('ssave').innerHTML = '<span class="waiting">saving\u2026</span>';
+    try { await saveBanner(b.dataset.s); $('ssave').innerHTML = '<span class="ok">saved \u2713</span>'; }
+    catch (e) { $('ssave').innerHTML = '<span class="err">could not save</span>'; }
+  });
+  document.querySelectorAll('.bnpick:not(.skinpick)').forEach(b => b.onclick = async () => {
     const id = b.dataset.b;
-    let list = [...document.querySelectorAll('.bnpick.on')].map(x => x.dataset.b);
+    let list = [...document.querySelectorAll('.bnpick.on:not(.skinpick)')].map(x => x.dataset.b);
     if (list.includes(id)) list = list.filter(x => x !== id);
     else { if (list.length >= 3) { $('bsave').innerHTML = '<span class="err">three at a time \u2014 unpick one first</span>'; return; } list.push(id); }
-    document.querySelectorAll('.bnpick').forEach(x => x.classList.toggle('on', list.includes(x.dataset.b)));
+    document.querySelectorAll('.bnpick:not(.skinpick)').forEach(x => x.classList.toggle('on', list.includes(x.dataset.b)));
     $('bsave').innerHTML = '<span class="waiting">saving\u2026</span>';
     try { await saveShown(list); $('bsave').innerHTML = '<span class="ok">saved \u2713</span>'; }
     catch (e) { $('bsave').innerHTML = '<span class="err">could not save</span>'; }
@@ -727,12 +757,13 @@ const MP = {
     try {
       const [stats, profs] = await Promise.all([
         fetchStats(ids),
-        fetch(SUPABASE.url + '/rest/v1/profiles?select=id,shown&id=in.(' + ids.join(',') + ')', { headers: headers() }).then(r => r.ok ? r.json() : [])
+        fetch(SUPABASE.url + '/rest/v1/profiles?select=id,shown,banner&id=in.(' + ids.join(',') + ')', { headers: headers() }).then(r => r.ok ? r.json() : [])
       ]);
-      const shownBy = {}; profs.forEach(p => shownBy[p.id] = p.shown || []);
-      const out = {};
-      ids.forEach(id => { out[id] = pickShown(earnedBanners(stats[id]), shownBy[id]); });
-      this.banners = out;
+      const shownBy = {}, wearing = {};
+      profs.forEach(p => { shownBy[p.id] = p.shown || []; wearing[p.id] = p.banner || 'none'; });
+      const out = {}, skins = {};
+      ids.forEach(id => { out[id] = pickShown(earnedBanners(stats[id]), shownBy[id]); skins[id] = pickSkin(stats[id], wearing[id]); });
+      this.banners = out; this.skins = skins;
       if (this.phase === 'lobby') this.lobby();
     } catch (e) {}
   },
@@ -741,8 +772,10 @@ const MP = {
     for (let i = 0; i < n; i++) {
       const p = mem[i];
       const bns = p && this.banners[p.pid] ? this.banners[p.pid].map(b => '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('') : '';
+      const sk = (p && this.skins && this.skins[p.pid]) || null;
+      const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + sk.label + '</span>' : '';
       h += p
-        ? '<div class="slot filled"><div class="nm"><span>' + esc(p.name) + (p.pid === me.id ? ' <span class="you">(you)</span>' : '') + '</span>' +
+        ? '<div class="slot filled' + (sk && sk.cls !== 'none' ? ' bnr-' + sk.cls : '') + '">' + rib + '<div class="nm"><span>' + esc(p.name) + (p.pid === me.id ? ' <span class="you">(you)</span>' : '') + '</span>' +
           '<span class="rdy ' + (p.ready ? 'y' : 'n') + '">' + (p.ready ? 'READY' : 'not ready') + '</span></div>' +
           '<div class="bns">' + bns + '</div></div>'
         : '<div class="slot empty">waiting for a player\u2026</div>';
