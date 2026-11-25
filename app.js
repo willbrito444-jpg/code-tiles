@@ -5,7 +5,7 @@ const EMAIL_DOMAIN = 'codetiles.local';
 
 const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d'), field = $('field'), msg = $('msg');
-const LANES = 3, COL = ['#5cc8ff', '#c084fc', '#ffa657'], GLYPH = ['(', '[', '{'];
+const LANES = 3, COL = ['#5cc8ff', '#c084fc', '#ffa657'];
 const FREEZE_BY_MODE = { 10: .5, 20: 1, 30: 1.5 }, TILE_H = 100, SLIDE_SPEED = 1000;
 const LOG_MIN = { 10: 1, 20: 1, 30: 1 };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -18,6 +18,36 @@ function client() {
 }
 const headers = () => ({ apikey: SUPABASE.key, Authorization: 'Bearer ' + (token || SUPABASE.key) });
 const jhead = () => ({ ...headers(), 'Content-Type': 'application/json' });
+
+/* ---------- tile icons ---------- */
+// themes swap the glyphs only: lane colours and the dark glyph fill stay as they are
+const THEMES = [
+  { id: 'brackets', name: 'Brackets', g: ['(', '[', '{'] },
+  { id: 'tags', name: 'Tags', g: ['<', '/', '>'] },
+  { id: 'arrows', name: 'Arrows', g: ['←', '↓', '→'] },
+  { id: 'shell', name: 'Shell', g: ['$', '~', '>'] },
+  { id: 'logic', name: 'Logic', g: ['&', '|', '!'] },
+  { id: 'math', name: 'Math', g: ['+', '-', '*'] },
+  { id: 'dots', name: 'Punctuation', g: [';', ':', '.'] }
+];
+let GLYPH = ['(', '[', '{'], THEME = 'brackets';
+function applyTheme(id) {
+  const t = THEMES.find(x => x.id === id) || THEMES[0];
+  THEME = t.id; GLYPH = t.g.slice();
+  ls.set('codeTilesTheme', THEME);
+  document.querySelectorAll('#pad button').forEach((b, i) => { if (b.firstChild) b.firstChild.nodeValue = GLYPH[i]; });
+}
+const THEME_HTML = () => '<div id="thm" class="bnpicks">' + THEMES.map(t =>
+  '<button class="thmpick' + (THEME === t.id ? ' on' : '') + '" data-t="' + t.id + '">' +
+  '<span class="thmg">' + t.g.map(g => '<i>' + esc(g) + '</i>').join('') + '</span>' +
+  '<span class="thmn">' + t.name + '</span></button>').join('') + '</div>';
+function bindTheme() {
+  document.querySelectorAll('.thmpick').forEach(b => b.onclick = () => {
+    applyTheme(b.dataset.t);
+    document.querySelectorAll('.thmpick').forEach(x => x.classList.toggle('on', x === b));
+    draw();
+  });
+}
 
 /* ---------- keybinds ---------- */
 const DEFAULT_BINDS = ['g', 'h', 'j'];
@@ -627,11 +657,12 @@ function home() {
   MP.leave(); running = false; started = false; freeze = 0; frozenTotal = 0; offset = 0; tiles = []; score = 0; timeLeft = DURATION;
   $('mpbar').style.display = 'none';
   show('<div id="topbar">' + topbarInner() + '</div>' +
+    '<div id="mecard" title="customise your banner and badges">' + meCardHTML() + '</div>' +
     '<h1 class="hero">Code Tiles</h1><div id="mascot"></div>' + MODES_HTML +
     '<p>Hit as many tiles as you can before the clock runs out. Press the key for the <b>lowest</b> tile\'s lane.</p>' +
     '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\ud83e\udd4a Play a friend</button></div>' +
     '<div class="row"><button class="ghost" id="duel">\ud83e\udd4a 1v1</button></div>' +
-    '<div class="row"><button class="ghost" id="prof">\uD83D\uDC64 Profile</button><button class="ghost" id="frs">\uD83D\uDC65 Friends' +
+    '<div class="row"><button class="ghost" id="sett">\u2699\uFE0F Settings</button><button class="ghost" id="frs">\uD83D\uDC65 Friends' +
       (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
     KEYS_HTML() + LB_HTML() +
     '<p>Signed in as <b>' + esc(me ? me.username : '') + '</b> \u00b7 <a href="#" id="out" style="color:var(--dim)">sign out</a><br>' +
@@ -639,11 +670,34 @@ function home() {
   $('go').onclick = () => startRun();
   $('mp').onclick = () => MP.menu();
   $('duel').onclick = () => MP.duel();
-  $('prof').onclick = () => profileScreen();
+  $('sett').onclick = () => settingsScreen();
   $('frs').onclick = () => friendsScreen();
+  $('mecard').onclick = () => profileScreen();
   $('out').onclick = e => { e.preventDefault(); signOut(); };
   bindModes(); bindKeys(); bindTopbar(); setMode(DURATION); hud(); draw();
   loadOgLeft().then(refreshTopbar);
+  // your own box, live: a rank can move while you are on another screen
+  loadMyProfile().then(() => { const el = $('mecard'); if (el) el.innerHTML = meCardHTML(); });
+}
+
+// the home card is your lobby box exactly as others see it, minus the "(you)"
+function meCardHTML() {
+  return playerCardHTML(me ? me.username : '', pickSkin(myStats, myBanner),
+    visibleBadges(earnedBanners(myStats, true), myShown, myWorld), false, null) +
+    '<div class="hint">tap to customise</div>';
+}
+
+function settingsScreen() {
+  show('<h1>Settings</h1>' +
+    '<div class="cols" style="max-width:620px"><div class="colmain" style="min-width:300px">' +
+      '<div class="friends"><h4>TILE ICONS</h4>' + THEME_HTML() +
+      '<div class="empty">changes the glyph on the tiles only — lanes keep their colours</div></div>' +
+      '<div class="friends"><h4>KEYS</h4>' + KEYS_HTML() +
+      '<div class="empty">click a key, then press the one you want</div></div>' +
+    '</div></div>' +
+    '<button class="ghost" id="bk">Back</button>', true);
+  bindTheme(); bindKeys();
+  $('bk').onclick = home;
 }
 
 function friendsScreen() {
@@ -1137,6 +1191,7 @@ document.querySelectorAll('#pad button').forEach(b => b.addEventListener('pointe
 
 /* ---------- boot ---------- */
 rebuildKeys();
+applyTheme(ls.get('codeTilesTheme', 'brackets'));
 show('<h1 class="hero">Code Tiles</h1><div class="waiting">loading\u2026</div>', true);
 (async () => {
   for (let i = 0; i < 40 && !window.supabase; i++) await new Promise(r => setTimeout(r, 100));
