@@ -214,8 +214,7 @@ function renderLb() {
     const b2 = $('lbbody'); if (!b2) return;
     b2.insertAdjacentHTML('beforeend',
       (mine.rnk > rows.length ? '<div class="lbgap">⋯</div>' : '') +
-      '<div class="myrank"><span class="rk">#' + mine.rnk + '</span><span class="nm">' + esc(me.username) + '</span><b>' + (mine.best | 0) + '</b></div>' +
-      '<div class="rankof">of ' + mine.players + ' player' + (+mine.players === 1 ? '' : 's') + '</div>');
+      '<div class="myrank"><span class="rk">#' + mine.rnk + '</span><span class="nm">' + esc(me.username) + '</span><b>' + (mine.best | 0) + '</b></div>');
   }).catch(() => { const b = $('lbbody'); if (b) b.innerHTML = '<div class="empty">couldn\'t load the board</div>'; });
 }
 document.addEventListener('click', e => {
@@ -344,13 +343,37 @@ async function fetchStats(ids) {
   return by;
 }
 // rarity, rarest last — the sort below puts the rarest banner first
-const RARITY = ['common', 'uncommon', 'rare', 'epic', 'mythic', 'og'];
+const RARITY = ['common', 'uncommon', 'rare', 'epic', 'mythic', 'world', 'og'];
 const TIER_RARITY = ['common', 'uncommon', 'rare', 'epic'];
 const GAMES_TIERS = [[10, 'common'], [100, 'uncommon'], [1000, 'rare']];
 const DUEL_TIERS = [[10, 'common'], [50, 'uncommon'], [250, 'rare']];
 const WORLD_MIN_PLAYERS = 1;
+let myPrevRank = {};
+// a live standing, not a trophy: one badge, your best placing anywhere
+function rankBadge(st, isMe) {
+  let top = null;
+  [10, 20, 30].forEach(m => {
+    const s = st[m];
+    if (!s || !s.rnk || s.rnk > 100 || s.players < WORLD_MIN_PLAYERS) return;
+    if (!top || s.rnk < top.rnk) top = { rnk: s.rnk, mode: m };
+  });
+  if (!top) return null;
+  const n = top.rnk;
+  const band = n === 1 ? 'w1' : n === 2 ? 'w2' : n === 3 ? 'w3' : n <= 10 ? 'w10' : 'w100';
+  const text = n === 1 ? '\ud83d\udc51 WORLD #1' : n <= 3 ? 'WORLD #' + n : n <= 10 ? 'TOP 10' : 'TOP 100';
+  let delta = '';
+  if (isMe) {
+    const prev = myPrevRank[top.mode] || 0;
+    if (prev && prev !== n) delta = n < prev ? ' \u25b2' + (prev - n) : ' \u25bc' + (n - prev);
+  }
+  return { id: 'w', rar: 'world', band: band, label: text + ' ' + MODE_ICON[top.mode] + delta };
+}
+const wbHTML = b => '<span class="wb ' + b.band + '"><i class="lv"></i>' + b.label + '</span>';
+// the world badge is status, so it sits outside the three-badge cap
+function pickable(all) { return all.filter(b => b.rar !== 'world'); }
+function visibleBadges(all, shown) { return all.filter(b => b.rar === 'world').concat(pickShown(pickable(all), shown)); }
 // every banner a player has actually earned, best tier per mode plus specials
-function earnedBanners(st) {
+function earnedBanners(st, isMe) {
   if (!st) return [];
   const out = [];
   let games = 0;
@@ -361,9 +384,6 @@ function earnedBanners(st) {
     for (let i = TIERS[m].length - 1; i >= 0; i--) {
       if (counts[i] > 0) { out.push({ id: 't' + m + i, rar: TIER_RARITY[i], label: s.best + ' ' + MODE_ICON[m] }); break; }
     }
-    // a world placing is a standing among players, not a row on the board,
-    // and it stays dark until there is a real field to place in
-    if (s.rnk && s.rnk <= 100 && s.players >= WORLD_MIN_PLAYERS) out.push({ id: 'w' + m, rar: 'mythic', rnk: s.rnk, label: 'world #' + s.rnk + ' ' + MODE_ICON[m] });
   });
   for (let i = GAMES_TIERS.length - 1; i >= 0; i--) {
     if (games >= GAMES_TIERS[i][0]) { out.push({ id: 'g' + i, rar: GAMES_TIERS[i][1], label: GAMES_TIERS[i][0] + ' games 🎮' }); break; }
@@ -377,6 +397,7 @@ function earnedBanners(st) {
   if (st[10] && st[10].best >= 62 && st[20] && st[20].best >= 125 && st[30] && st[30].best >= 185) out.push({ id: 'crown', rar: 'epic', label: '👑 Triple crown' });
   // one of the first 100 accounts ever made: numbered, permanent, finite
   if (st.og) out.push({ id: 'og', rar: 'og', label: 'OG #' + st.og });
+  const w = rankBadge(st, isMe); if (w) out.push(w);
   return out.sort((a, b) => RARITY.indexOf(b.rar) - RARITY.indexOf(a.rar));
 }
 // banners dress the whole lobby box; badges are the pills inside it
@@ -401,6 +422,11 @@ let myStats = {}, myShown = [], myBanner = 'none';
 async function loadMyProfile() {
   if (!me) return;
   const by = await fetchStats([me.id]); myStats = by[me.id] || {};
+  [10, 20, 30].forEach(m => {
+    const k = 'codeTilesRank' + m, cur = myStats[m] && myStats[m].rnk;
+    myPrevRank[m] = +ls.get(k, 0) || 0;
+    if (cur) ls.set(k, cur);
+  });
   try {
     const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=shown,banner&id=eq.' + me.id, { headers: headers() });
     const rows = r.ok ? await r.json() : [];
@@ -572,7 +598,8 @@ function friendsScreen() {
 async function profileScreen() {
   show('<h1>Profile</h1><div class="waiting">loading\u2026</div>', true);
   await loadMyProfile();
-  const all = earnedBanners(myStats), chosen = pickShown(all, myShown).map(b => b.id);
+  const all = earnedBanners(myStats, true), picks = pickable(all), wb = all.find(b => b.rar === 'world');
+  const chosen = pickShown(picks, myShown).map(b => b.id);
   const skins = earnedSkins(myStats), wearing = pickSkin(myStats, myBanner).id;
   const skinList = skins.map(x => '<button class="bnpick skinpick' + (x.cls !== 'none' ? ' rb-' + x.cls : '') + (x.id === wearing ? ' on' : '') + '" data-s="' + x.id + '">' + x.label + '</button>').join('');
   const statLine = [10, 20, 30].map(m => {
@@ -585,13 +612,14 @@ async function profileScreen() {
     return nx ? '<div class="empty">' + MODE_ICON[m] + ' next: <b>' + nx[1] + '</b> for ' + nx[0] + '</div>' : '<div class="empty">' + MODE_ICON[m] + ' every tier cleared</div>';
   }).join('');
   const bannerList = all.length
-    ? all.map(b => '<button class="bnpick small r-' + b.rar + (chosen.includes(b.id) ? ' on' : '') + '" data-b="' + b.id + '">' + b.label + '</button>').join('')
+    ? picks.map(b => '<button class="bnpick small r-' + b.rar + (chosen.includes(b.id) ? ' on' : '') + '" data-b="' + b.id + '">' + b.label + '</button>').join('')
     : '<div class="empty">no banners yet \u2014 they unlock from your scores</div>';
   show('<h1>Profile</h1><h2>' + esc(me.username) + '</h2>' +
     '<div class="cols" style="max-width:660px"><div class="colmain" style="min-width:280px">' +
       '<div class="friends"><h4>PERSONAL BESTS</h4>' + statLine + next + '</div>' +
     '</div><div class="colmain" style="min-width:280px">' +
       '<div class="friends"><h4>BADGES <span style="color:var(--dim);font-weight:500">pick up to 3</span></h4>' +
+      (wb ? '<div class="bnpicks">' + wbHTML(wb) + '</div><div class="empty">your world placing always shows \u2014 it costs you no slot</div>' : '') +
       '<div class="bnpicks">' + bannerList + '</div>' +
       '<div id="bsave" class="empty">these show under your username in the lobby</div></div>' +
       '<div class="friends"><h4>BANNER <span style="color:var(--dim);font-weight:500">pick one</span></h4>' +
@@ -641,7 +669,7 @@ function soloResult(pb, logging) {
 // one player's box: banner behind it, badges inside it
 function playerCardHTML(name, sk, badges, isMe, ready) {
   const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + sk.label + '</span>' : '';
-  const bns = (badges || []).map(b => '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('');
+  const bns = (badges || []).map(b => b.band ? wbHTML(b) : '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('');
   return '<div class="slot filled' + (sk && sk.cls !== 'none' ? ' bnr-' + sk.cls : '') + '">' + rib +
     '<div class="nm"><span>' + esc(name) + (isMe ? ' <span class="you">(you)</span>' : '') + '</span>' +
     (ready === null ? '' : '<span class="rdy ' + (ready ? 'y' : 'n') + '">' + (ready ? 'READY' : 'not ready') + '</span>') +
@@ -875,7 +903,7 @@ const MP = {
       const shownBy = {}, wearing = {};
       profs.forEach(p => { shownBy[p.id] = p.shown; wearing[p.id] = p.banner || 'none'; });
       const out = {}, skins = {};
-      ids.forEach(id => { out[id] = pickShown(earnedBanners(stats[id]), shownBy[id]); skins[id] = pickSkin(stats[id], wearing[id]); });
+      ids.forEach(id => { out[id] = visibleBadges(earnedBanners(stats[id], id === me.id), shownBy[id]); skins[id] = pickSkin(stats[id], wearing[id]); });
       this.banners = out; this.skins = skins;
       if (this.phase === 'lobby') this.lobby();
     } catch (e) {}
