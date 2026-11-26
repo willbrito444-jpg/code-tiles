@@ -1160,8 +1160,15 @@ const MP = {
     this.myTeam = i < 0 ? 'A' : (i % 2 === 0 ? 'A' : 'B');
     this.repaint();
     this.loadRosterBanners();
-    if (this.host && this.phase === 'between' && !this.advancing && this.allReady()) {
+    // this.ready is checked as well as the roster: onResult clears it locally but the
+    // presence write is debounced, so for a moment the state still reads everyone-ready
+    // from the round just gone, and without this a round (or a rematch) fires itself.
+    if (this.host && this.phase === 'between' && !this.advancing && this.ready && this.allReady()) {
       this.advancing = true; this.round++; this.nextRound();
+    }
+    // everybody wanted another one: startMatch resets the series and deals round one
+    if (this.host && this.phase === 'done' && !this.advancing && this.ready && this.allReady()) {
+      this.advancing = true; this.startMatch();
     }
     // a quick match has no lobby to sit in. both sides ready up blind, then the
     // opponent is uncovered and the match starts a beat later, so nobody can size
@@ -1181,14 +1188,18 @@ const MP = {
     if (this.phase !== 'between' && this.phase !== 'done') return;
     // the reveal for THIS round is already up: refresh the ready row in place, or it restarts.
     // keyed on the round, so a new round always rebuilds and never inherits the last one.
-    if (this.phase === 'between' && $('rdyrow') && this._shownRound === this.round) return this.paintReady();
+    if ((this.phase === 'between' || this.phase === 'done') && $('rdyrow') && this._shownRound === this.round) return this.paintReady();
     this.resultScreen();
   },
   paintReady() {
     const row = $('rdyrow');
     if (row) row.innerHTML = this.roster.map(r => '<span class="rdy ' + (r.ready ? 'y' : 'n') + '">' + esc(r.name) + (r.ready ? ' \u2713' : '') + '</span>').join(' ');
     const b = $('rdy');
-    if (b) { b.classList.toggle('on', this.ready); b.textContent = this.ready ? '\u2713 Ready' : 'Ready for next round'; }
+    if (b) {
+      b.classList.toggle('on', this.ready);
+      const done = this.phase === 'done';
+      b.textContent = this.ready ? (done ? '\u2713 Rematch' : '\u2713 Ready') : (done ? 'Rematch' : 'Ready for next round');
+    }
   },
 
   onChat(p) {
@@ -1380,12 +1391,15 @@ const MP = {
         ? series +
           '<p class="tag">' + (this.cfg.format === 'triathlon' ? 'best of 3 \u00b7 10s, 20s, 30s' : 'best of ' + this.totalRounds() + ' \u00b7 ' + this.cfg.mode + 's') +
             (this.cfg.teamSize > 1 ? ' \u00b7 2v2, team average' : '') + '</p>' +
-          '<div class="row">' + (this.host ? '<button class="primary" id="again">Back to lobby</button>' : '<div class="waiting">waiting for the host\u2026</div>') +
-          '<button class="ghost" id="bk">Leave</button></div>'
+          '<div class="row" id="rdyrow">' + readyList + '</div>' +
+          '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Rematch' : 'Rematch') + '</button>' +
+            (this.host && !this.cfg.quick ? '<button class="ghost" id="again">Back to lobby</button>' : '') +
+            '<button class="ghost" id="bk">Leave</button></div>' +
+          '<div class="waiting">' + (this.need() > 2 ? 'all four' : 'both players') + ' have to want one \u00b7 <kbd>R</kbd></div>'
         : series +
           '<div class="row" id="rdyrow">' + readyList + '</div>' +
           '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready for next round') + '</button></div>' +
-          '<div class="waiting">next round starts when everyone is ready</div>';
+          '<div class="waiting">next round starts when everyone is ready \u00b7 <kbd>R</kbd></div>';
       // your team on the left, so the reveal reads left to right in the order it plays
       show('<h2 class="rhead">Round ' + (this.round + 1) + (p.done ? ' \u00b7 final' : '') + '</h2>' +
         '<div class="cols"><div class="colmain">' +
@@ -1396,11 +1410,11 @@ const MP = {
           (champ === 'tie' ? 'Match drawn' : champ === mine ? 'You win!' : 'You lose') + '</div>' : '') +
         '<div class="revealctl' + (p.done ? ' late' : '') + '" style="--vd:' + vd + 's">' + ctl +
         '</div></div><div class="colside">' + this.CHAT_HTML() + '</div></div>', true);
+      $('rdy').onclick = () => this.setReady(!this.ready);
       if (p.done) {
-        if (this.host) $('again').onclick = () => { this.ch.send({ type: 'broadcast', event: 'home', payload: {} }); };
+        const ag = $('again');
+        if (ag) ag.onclick = () => { this.ch.send({ type: 'broadcast', event: 'home', payload: {} }); };
         $('bk').onclick = () => this.menu();
-      } else {
-        $('rdy').onclick = () => this.setReady(!this.ready);
       }
       this.bindChat();
     }
@@ -1424,7 +1438,14 @@ addEventListener('keydown', e => {
     BINDS[listening] = k; saveBinds(); return;
   }
   if (e.key === 'Escape') { e.preventDefault(); home(); return; }
-  if (MP.phase === 'none' && e.key.toLowerCase() === 'r') { e.preventDefault(); startRun(); return; }
+  // r restarts a solo run, and stands in for the ready button inside a match, where
+  // restarting is not on offer. skipped entirely if r has been bound to a lane.
+  if (e.key.toLowerCase() === 'r' && KEY['r'] === undefined) {
+    if (MP.phase === 'none') { e.preventDefault(); startRun(); return; }
+    if (MP.phase === 'lobby' || MP.phase === 'between' || MP.phase === 'done') {
+      e.preventDefault(); MP.setReady(!MP.ready); return;
+    }
+  }
   const l = KEY[e.key.toLowerCase()];
   if (l !== undefined) { e.preventDefault(); press(l); return; }
   if (!running && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); const g = $('go'); if (g) g.click(); }
