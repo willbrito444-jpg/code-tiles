@@ -964,7 +964,7 @@ const MP = {
 
   get active() { return this.phase === 'countdown' || this.phase === 'playing'; },
   leave() {
-    this.qmStop(); this.clearAuto();
+    this.qmStop(); this.clearAuto(); this.draft = '';
     if (this.ch) { try { this.ch.unsubscribe(); } catch (e) {} this.ch = null; }
     this.phase = 'none'; this.code = ''; this.host = false; this.roster = []; this.chat = []; this.ready = false; this.advancing = false; this.bannerKey = '';
     clearTimeout(this._trackT); this._trackAt = 0;
@@ -1123,6 +1123,13 @@ const MP = {
     this.leave();
     this.code = code; this.host = isHost; this.joinedAt = Date.now(); this.phase = 'lobby'; this.ready = false; this.chat = []; this.advancing = false; this.bannerKey = '';
     this.wins = { A: 0, B: 0 }; this.history = []; this.round = 0; this.revealed = false;
+    this.draft = '';
+    // cfg was the one thing left carrying over. after a quick match its quick flag
+    // stayed true, and lobby() opens with `if (this.cfg.quick) return renderDuel`,
+    // so creating a lobby drew the duel screen instead: no code, wrong layout.
+    // a joiner is sent the host's cfg by broadcast, and startQuick sets its own
+    // immediately after this, so resetting here costs nothing either way.
+    this.cfg = { format: 'shootout', mode: 20, teamSize: 1 };
     this.ch = c.channel('lobby-' + code, { config: { presence: { key: me.id }, broadcast: { self: true } } });
     this.ch
       .on('presence', { event: 'sync' }, () => this.syncRoster())
@@ -1241,13 +1248,22 @@ const MP = {
     return '<div class="chat"><h4>LOBBY CHAT</h4><div class="log" id="chatlog">' + this.chatLines() + '</div>' +
       '<form id="chatform"><input id="chatin" maxlength="160" placeholder="say something\u2026" autocomplete="off"><button type="submit">send</button></form></div>';
   },
+  draft: '',
   bindChat() {
     const f = $('chatform'); if (!f) return;
+    const i = $('chatin');
+    // the draft is kept on MP rather than in the input. any presence change
+    // re-renders the lobby, which used to take whatever was half-typed with it.
+    if (i) {
+      i.value = this.draft || '';
+      i.oninput = () => { this.draft = i.value; };
+      if (this.draft) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+    }
     f.onsubmit = e => {
       e.preventDefault();
-      const i = $('chatin'), t = (i.value || '').trim();
+      const t = (i.value || '').trim();
       if (!t) return;
-      i.value = '';
+      i.value = ''; this.draft = '';
       this.ch.send({ type: 'broadcast', event: 'chat', payload: { name: me.username, text: t.slice(0, 160) } });
     };
     const log = $('chatlog'); if (log) log.scrollTop = log.scrollHeight;
