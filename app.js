@@ -1532,13 +1532,14 @@ const MP = {
 // real field, the real keys and the real reveal, so what you learn is the game itself;
 // only the board and the opponent are invented. it records nothing.
 const TUT = {
-  wait: -1, lit: 0, solo: 0, was: 30, ready: false, BOT: 'TILEBOT',
-  start() { TUTOR = true; this.lit = 0; this.solo = 0; this.ready = false; this.was = DURATION; this.intro(); },
+  wait: -1, lit: 0, solo: 0, was: 30, ready: false, back: '', BOT: 'TILEBOT',
+  start(back) { TUTOR = true; this.back = back || ''; this.lit = 0; this.solo = 0; this.ready = false; this.was = DURATION; this.intro(); },
   stop() {
     TUTOR = false; this.wait = -1; running = false; onRoundEnd = null;
     ls.set('codeTilesTut', '1');
     if (DURATION !== this.was) setMode(this.was);
-    if (PRACTICE) return practiceMenu();
+    // back where it was launched from: the practice menu is not the home screen
+    if (this.back === 'practice' || PRACTICE) return practiceMenu();
     home();
   },
   step(n) { return '<p class="tag">tutorial · ' + n + ' of 5</p>'; },
@@ -1833,7 +1834,7 @@ function practiceMenu() {
       '<div class="row"><button class="primary" id="pgo">Start practice</button></div>' +
       '<div class="row"><button class="ghost" id="ptut">\uD83C\uDF93 Run the tutorial</button></div>' +
       '<div class="row"><button class="ghost" id="pexit">Back to the game</button></div>', true);
-    $('ptut').onclick = () => TUT.start();
+    $('ptut').onclick = () => TUT.start('practice');
     document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
       const v = b.dataset.v;
       if (b.dataset.p === 'sz') sz = +v; else if (b.dataset.p === 'md') md = +v; else df = v;
