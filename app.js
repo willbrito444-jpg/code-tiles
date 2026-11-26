@@ -100,6 +100,8 @@ function beep(f, d = .08, type = 'square', g = .08) {
   try { const o = AC.createOscillator(), v = AC.createGain(); o.type = type; o.frequency.value = f; v.gain.setValueAtTime(g, AC.currentTime); v.gain.exponentialRampToValueAtTime(.0001, AC.currentTime + d); o.connect(v).connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
 }
 function audioOn() { try { if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)(); AC.resume(); } catch (e) {} }
+// somebody turned up: two notes, so you hear it even if you looked away
+function sfxFound() { beep(660, .1, 'triangle', .07); setTimeout(() => beep(990, .14, 'triangle', .07), 120); }
 // one reusable slice of white noise: the grit behind drums, punches and clicks
 let NOISE = null;
 function noise(d, g, hp, lp) {
@@ -948,11 +950,11 @@ function ribLines(label) {
   const w = label.slice(0, i);
   return '<b' + (w.length > 3 ? ' class="lng"' : '') + '>' + esc(w) + '</b><i>' + esc(label.slice(i + 1)) + '</i>';
 }
-function playerCardHTML(name, sk, badges, isMe, ready) {
+function playerCardHTML(name, sk, badges, isMe, ready, pid) {
   const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + ribLines(sk.label) + '</span>' : '';
   const bns = (badges || []).map(b => b.band ? wbHTML(b) : '<span class="bn' + rarCls(b) + '">' + b.label + '</span>').join('');
   const skin = sk && sk.cls !== 'none' ? ' bnr-' + sk.cls : '';
-  return '<div class="slot filled' + skin + '">' + rib + mascotHTML(sk && sk.modes) +
+  return '<div class="slot filled' + skin + '"' + (pid ? ' data-seat="' + pid + '"' : '') + '>' + rib + mascotHTML(sk && sk.modes) +
     '<div class="nm"><span>' + esc(name) + (isMe ? ' <span class="you">(you)</span>' : '') + '</span>' +
     (ready === null ? '' : '<span class="rdy ' + (ready ? 'y' : 'n') + '">' + (ready ? 'READY' : 'not ready') + '</span>') +
     '</div><div class="bns">' + bns + '</div></div>';
@@ -964,7 +966,7 @@ const MP = {
 
   get active() { return this.phase === 'countdown' || this.phase === 'playing'; },
   leave() {
-    this.qmStop(); this.clearAuto(); this.draft = '';
+    this.qmStop(); this.clearAuto(); this.draft = ''; this._foundCue = ''; this._seatKey = '';
     if (this.ch) { try { this.ch.unsubscribe(); } catch (e) {} this.ch = null; }
     this.phase = 'none'; this.code = ''; this.host = false; this.roster = []; this.chat = []; this.ready = false; this.advancing = false; this.bannerKey = '';
     clearTimeout(this._trackT); this._trackAt = 0;
@@ -1008,7 +1010,7 @@ const MP = {
   duelSides(state) {
     const n = this.duelTeam || 1;
     const inLobby = this.phase === 'lobby' && this.roster.length;
-    const card = p => playerCardHTML(p.name, (this.skins || {})[p.pid], (this.banners || {})[p.pid], p.pid === me.id, !!p.ready);
+    const card = p => playerCardHTML(p.name, (this.skins || {})[p.pid], (this.banners || {})[p.pid], p.pid === me.id, p.pid === me.id ? this.ready : !!p.ready, p.pid);
     let us = [], them = [];
     if (inLobby) {
       const i = this.roster.findIndex(x => x.pid === me.id);
@@ -1017,7 +1019,7 @@ const MP = {
     }
     // my own card comes from my live profile until presence has me, so the banner never blanks
     const left = (inLobby && us.length ? us.map(card).join('')
-      : playerCardHTML(me.username, pickSkin(myStats, myBanner, myWorld), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null)) +
+      : playerCardHTML(me.username, pickSkin(myStats, myBanner, myWorld), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null, me.id)) +
       this.emptySlots(n - Math.max(1, us.length), state, 'teammate');
     // only the other side is hidden: a teammate you cannot see is no comfort, and the
     // point is to stop someone conceding to a banner rather than to a player
@@ -1041,7 +1043,6 @@ const MP = {
     if (state === 'idle') action = '<div class="row"><button class="primary" id="dfind">' + (need > 2 ? 'Find a match' : 'Find opponent') + '</button></div>';
     else if (state === 'searching') action = '<div class="waiting">waiting for ' + (need > 2 ? (need - 1) + ' more players' : 'someone') + ' to join\u2026</div><div class="row"><button class="ghost" id="dcan">Cancel</button></div>';
     else action = '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready up') + '</button></div>' +
-      '<div class="waiting">the duel starts once you are both ready</div>' +
       '<div class="keyhint"><kbd>R</kbd> ready up</div>';
     // the two boxes stay full width even with the chat alongside, so both banners read properly
     const head = '<div class="row">' + modes + '</div>';
@@ -1049,8 +1050,15 @@ const MP = {
       '<button class="ghost" id="bk">' + (state === 'idle' ? 'Back' : 'Leave') + '</button>';
     const sides = this.duelSides(state);
     const n = this.duelTeam || 1;
-    show('<h1>' + n + 'v' + n + '</h1><p class="tag">best of 3 \u00b7 ' +
-      (n > 1 ? 'random teammate and opponents' : 'random opponent') + '</p>' +
+    // finding somebody opened on the same grey heading as the idle screen, so people sat
+    // in it without noticing anyone had turned up. it announces itself now, and says
+    // what to do next, because the one thing still needed is a press of that button.
+    const header = state === 'found'
+      ? '<div class="foundbar"><b>' + (need > 2 ? 'MATCH FOUND' : 'OPPONENT FOUND') + '</b>' +
+        '<span id="fstat">' + this.fstat() + '</span></div><p class="tag">' + n + 'v' + n + ' \u00b7 best of 3</p>'
+      : '<h1>' + n + 'v' + n + '</h1><p class="tag">best of 3 \u00b7 ' +
+        (n > 1 ? 'random teammate and opponents' : 'random opponent') + '</p>';
+    show(header +
       (state === 'found'
         ? sides + '<div class="cols"><div class="colmain">' + head + tail + '</div><div class="colside">' + this.CHAT_HTML() + '</div></div>'
         : head + sides + tail), true);
@@ -1059,7 +1067,16 @@ const MP = {
     const f = $('dfind'); if (f) f.onclick = () => this.search();
     const c = $('dcan'); if (c) c.onclick = () => { this.qmStop(); this.renderDuel('idle'); };
     const r = $('rdy'); if (r) r.onclick = () => this.setReady(!this.ready);
-    if (state === 'found') this.bindChat();
+    if (state === 'found') {
+      this.bindChat();
+      this._seatKey = this.seatKey();
+      if (this._foundCue !== this.code) { this._foundCue = this.code; sfxFound(); }
+    }
+  },
+  fstat() {
+    return this.revealed ? 'starting\u2026'
+      : this.ready ? ((this.duelTeam || 1) > 1 ? 'waiting for the others\u2026' : 'waiting for your opponent\u2026')
+      : 'ready up to play';
   },
   // the 2v2 queue is a table of its own, so a 1v1 search never sees a 2v2 waiter
   qmFns() {
@@ -1069,6 +1086,7 @@ const MP = {
   },
   async search() {
     const mode = this.duelMode, fn = this.qmFns();
+    audioOn();  // a click, so the cue can actually sound when somebody turns up
     this.qmOff = false;
     this.renderDuel('searching');
     try {
@@ -1211,9 +1229,40 @@ const MP = {
   teamOf(i) { return i % 2 === 0 ? 'A' : 'B'; },
   teamMembers(t) { return this.roster.filter((p, i) => this.teamOf(i) === t); },
   need() { return this.cfg.teamSize * 2; },
-  allReady() { return this.roster.length >= this.need() && this.roster.every(p => p.ready); },
+  // my own seat answers from the click that just happened, not from my presence write,
+  // which is debounced: otherwise spamming ready could start a match I had just backed out of
+  allReady() { return this.roster.length >= this.need() && this.roster.every(p => p.pid === me.id ? this.ready : p.ready); },
+  // everything that changes the shape of the lobby, so repaint knows a patch will do
+  seatKey() {
+    return [this.cfg.quick ? 'q' : 'l', this.revealed ? 'r' : '-', this.host ? 'h' : '-',
+      this.cfg.teamSize, this.cfg.format, this.cfg.mode, this.roster.map(p => p.pid).join('|')].join(':');
+  },
+  // only who is ready has moved: patch that in place. re-running show() for it rebuilt the
+  // chat and restarted every banner animation on screen, which is what made spamming the
+  // ready button look broken, and the chip on my own card read back from stale presence.
+  paintSeats() {
+    this.roster.forEach(p => {
+      const el = document.querySelector('.slot[data-seat="' + p.pid + '"] .rdy');
+      if (!el) return;
+      const r = p.pid === me.id ? this.ready : !!p.ready;
+      el.className = 'rdy ' + (r ? 'y' : 'n');
+      el.textContent = r ? 'READY' : 'not ready';
+    });
+    const b = $('rdy');
+    if (b) { b.classList.toggle('on', this.ready); b.textContent = this.ready ? '\u2713 Ready' : 'Ready up'; }
+    const f = $('fstat'); if (f) f.textContent = this.fstat();
+    const s = $('startm');
+    if (s) {
+      const have = this.roster.length, need = this.need(), all = this.allReady();
+      s.disabled = !all;
+      s.textContent = have < need ? 'Waiting (' + have + '/' + need + ')' : all ? 'Start match' : 'Waiting for ready';
+    }
+  },
   repaint() {
-    if (this.phase === 'lobby') return this.lobby();
+    if (this.phase === 'lobby') {
+      if ($('rdy') && this._seatKey === this.seatKey()) return this.paintSeats();
+      return this.lobby();
+    }
     if (this.phase !== 'between' && this.phase !== 'done') return;
     // the reveal for THIS round is already up: refresh the ready row in place, or it restarts.
     // keyed on the round, so a new round always rebuilds and never inherits the last one.
@@ -1296,7 +1345,7 @@ const MP = {
     for (let i = 0; i < n; i++) {
       const p = mem[i];
       h += p
-        ? playerCardHTML(p.name, (this.skins || {})[p.pid], (this.banners || {})[p.pid], p.pid === me.id, !!p.ready)
+        ? playerCardHTML(p.name, (this.skins || {})[p.pid], (this.banners || {})[p.pid], p.pid === me.id, p.pid === me.id ? this.ready : !!p.ready, p.pid)
         : '<div class="slot empty">waiting for a player\u2026</div>';
     }
     return h;
@@ -1321,6 +1370,7 @@ const MP = {
         '<div class="keyhint"><kbd>R</kbd> ready up</div>' +
         '<button class="ghost" id="bk">Leave</button>' +
       '</div><div class="colside">' + this.CHAT_HTML() + FRIENDS_HTML(true) + '</div></div>', true);
+    this._seatKey = this.seatKey();
     $('bk').onclick = () => this.menu();
     $('rdy').onclick = () => this.setReady(!this.ready);
     if (this.host) {
