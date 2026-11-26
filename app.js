@@ -97,7 +97,69 @@ function beep(f, d = .08, type = 'square', g = .08) {
   try { const o = AC.createOscillator(), v = AC.createGain(); o.type = type; o.frequency.value = f; v.gain.setValueAtTime(g, AC.currentTime); v.gain.exponentialRampToValueAtTime(.0001, AC.currentTime + d); o.connect(v).connect(AC.destination); o.start(); o.stop(AC.currentTime + d); } catch (e) {}
 }
 function audioOn() { try { if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)(); AC.resume(); } catch (e) {} }
+// one reusable slice of white noise: the grit behind drums, punches and clicks
+let NOISE = null;
+function noise(d, g, hp, lp) {
+  if (!AC) return;
+  try {
+    if (!NOISE) {
+      NOISE = AC.createBuffer(1, (AC.sampleRate * .4) | 0, AC.sampleRate);
+      const a = NOISE.getChannelData(0);
+      for (let i = 0; i < a.length; i++) a[i] = Math.random() * 2 - 1;
+    }
+    const t = AC.currentTime, src = AC.createBufferSource(), v = AC.createGain();
+    src.buffer = NOISE;
+    let n = src;
+    if (hp) { const f = AC.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp; n = n.connect(f); }
+    if (lp) { const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; n = n.connect(f); }
+    v.gain.setValueAtTime(g, t); v.gain.exponentialRampToValueAtTime(.0001, t + d);
+    n.connect(v).connect(AC.destination); src.start(t); src.stop(t + d);
+  } catch (e) {}
+}
+// a tone that slides from one pitch to another: thuds, pops, lasers
+function swoop(f0, f1, d, type, g) {
+  if (!AC) return;
+  try {
+    const t = AC.currentTime, o = AC.createOscillator(), v = AC.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(Math.max(1, f0), t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + d);
+    v.gain.setValueAtTime(g, t); v.gain.exponentialRampToValueAtTime(.0001, t + d);
+    o.connect(v).connect(AC.destination); o.start(t); o.stop(t + d);
+  } catch (e) {}
+}
 const NOTES = [262, 294, 330, 349, 392, 440, 494, 523, 587, 659];
+// sound packs: a set of three, one sound per lane, chosen whole like the key sets.
+// classic is the original climbing scale, so it is the one set that ignores the lane.
+const SOUNDS = [
+  { id: 'classic', name: 'Classic', i: '\uD83C\uDFB5', hit: () => beep(NOTES[note++ % NOTES.length], .1, 'triangle', .08) },
+  { id: 'piano', name: 'Piano', i: '\uD83C\uDFB9', hit: l => { const f = [523.25, 659.25, 783.99][l];
+      beep(f, .45, 'triangle', .09); beep(f * 2, .22, 'sine', .03); } },
+  { id: 'drums', name: 'Drums', i: '\uD83E\uDD41', hit: l => { if (l === 0) swoop(155, 45, .18, 'sine', .15);
+      else if (l === 1) { noise(.13, .10, 1400, 0); swoop(250, 170, .08, 'triangle', .06); }
+      else noise(.05, .10, 7000, 0); } },
+  { id: 'fight', name: 'Fight', i: '\uD83E\uDD4A', hit: l => { if (l === 0) { swoop(190, 60, .1, 'square', .11); noise(.06, .08, 300, 2200); }
+      else if (l === 1) { swoop(120, 40, .16, 'sine', .13); noise(.09, .06, 200, 1500); }
+      else { noise(.07, .10, 2500, 0); swoop(900, 300, .07, 'sawtooth', .04); } } },
+  { id: 'pop', name: 'Pop', i: '\uD83E\uDEE7', hit: l => { const f = [420, 540, 680][l]; swoop(f * .55, f * 1.9, .07, 'sine', .14); } },
+  { id: 'click', name: 'Click', i: '\u2328\uFE0F', hit: l => { noise(.022, .12, [2600, 3400, 4400][l], 0); beep([1500, 1800, 2200][l], .02, 'square', .045); } },
+  { id: 'arcade', name: 'Arcade', i: '\uD83D\uDC7E', hit: l => { const f = [440, 587, 740][l]; swoop(f, f * 1.6, .07, 'square', .13); } },
+  { id: 'laser', name: 'Laser', i: '\uD83D\uDEF8', hit: l => { const f = [1400, 1750, 2100][l]; swoop(f, f * .25, .14, 'sawtooth', .13); } }
+];
+let SOUND = 'classic';
+function applySound(id) { SOUND = (SOUNDS.find(x => x.id === id) || SOUNDS[0]).id; ls.set('codeTilesSound', SOUND); }
+function sfxHit(l) { (SOUNDS.find(x => x.id === SOUND) || SOUNDS[0]).hit(l); }
+const SOUND_HTML = () => '<div id="snd" class="bnpicks">' + SOUNDS.map(t =>
+  '<button class="thmpick sndpick' + (SOUND === t.id ? ' on' : '') + '" data-s="' + t.id + '">' +
+  '<span class="sndi">' + t.i + '</span><span class="thmn">' + t.name + '</span></button>').join('') + '</div>';
+function bindSound() {
+  document.querySelectorAll('.sndpick').forEach(b => b.onclick = () => {
+    audioOn(); applySound(b.dataset.s);
+    document.querySelectorAll('.sndpick').forEach(x => x.classList.toggle('on', x === b));
+    // play the set straight through, so you hear all three before committing to it
+    [0, 1, 2].forEach(l => setTimeout(() => sfxHit(l), l * 150));
+  });
+}
 
 let W = 0, H = 0, dpr = 1;
 function resize() { const r = cv.getBoundingClientRect(); dpr = devicePixelRatio || 1; W = r.width; H = r.height; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
@@ -141,7 +203,7 @@ function press(l) {
   started = true;
   if (tiles[0] === l) {
     tiles.shift(); addTile(); score++; offset += TILE_H;
-    beep(NOTES[note++ % NOTES.length], .1, 'triangle', .08);
+    sfxHit(l);
     if (wrongLane >= 0) wrongLane = -1;
   } else { freeze = FREEZE(); misses++; wrongLane = l; beep(110, .3, 'sawtooth', .1); }
   hud();
@@ -746,11 +808,13 @@ function settingsScreen() {
     '<div class="cols" style="max-width:620px"><div class="colmain" style="min-width:300px">' +
       '<div class="friends"><h4>TILE ICONS</h4>' + THEME_HTML() +
       '<div class="empty">changes the glyph on the tiles only — lanes keep their colours</div></div>' +
+      '<div class="friends"><h4>HIT SOUND</h4>' + SOUND_HTML() +
+      '<div class="empty">each set has its own sound per lane \u2014 pick one to hear it</div></div>' +
       '<div class="friends"><h4>KEYS</h4>' + KEYS_HTML() +
       '<div class="empty">click a key, then press the one you want</div></div>' +
     '</div></div>' +
     '<button class="ghost" id="bk">Back</button>', true);
-  bindTheme(); bindKeys();
+  bindTheme(); bindSound(); bindKeys();
   $('bk').onclick = home;
 }
 
@@ -1336,6 +1400,7 @@ document.querySelectorAll('#pad button').forEach(b => b.addEventListener('pointe
 /* ---------- boot ---------- */
 rebuildKeys();
 applyTheme(ls.get('codeTilesTheme', 'brackets'));
+applySound(ls.get('codeTilesSound', 'classic'));
 show('<h1 class="hero">Code Tiles</h1><div class="waiting">loading\u2026</div>', true);
 (async () => {
   for (let i = 0; i < 40 && !window.supabase; i++) await new Promise(r => setTimeout(r, 100));
