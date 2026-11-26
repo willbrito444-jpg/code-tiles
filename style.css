@@ -347,11 +347,16 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 .rteam > * { animation:popin .4s cubic-bezier(.2,1.5,.45,1) var(--d) both; }
 @keyframes popin { from { opacity:0; transform:translateY(-9px) scale(.8); } to { opacity:1; transform:none; } }
 /* one player per line, then both dim as they fold into the average */
-.rrow { display:flex; align-items:baseline; justify-content:space-between; gap:8px;
-  font-size:13px; color:var(--dim); padding:1px 2px;
+.rrow { display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  font-size:13px; color:var(--fg); padding:3px 4px; border-radius:7px;
+  background:rgba(255,255,255,.04);margin-bottom:3px;
   animation:popin .4s cubic-bezier(.2,1.5,.45,1) var(--d) both, rowdim .35s ease-out var(--md,99s) forwards; }
-.rrow b { color:var(--fg); font-weight:800; font-variant-numeric:tabular-nums; }
-@keyframes rowdim { to { opacity:.58; } }
+.rrow span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rrow b { font-size:21px; font-weight:900; line-height:1; font-variant-numeric:tabular-nums; }
+.rteam.ra .rrow b { color:var(--acc); }
+.rteam.rb .rrow b { color:#ffa657; }
+/* they stay legible after folding in: reading them is the whole point */
+@keyframes rowdim { to { opacity:.75; } }
 .rmerge { animation-name:mergein; animation-duration:.5s; }
 .rmerge.sum { margin-top:7px; padding-top:7px; border-top:1px solid var(--line); }
 @keyframes mergein { 0% { opacity:0; transform:scale(.45); } 65% { opacity:1; transform:scale(1.1); } 100% { transform:scale(1); } }
@@ -379,6 +384,15 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 @keyframes stampbig { from { opacity:0; transform:scale(1.5); letter-spacing:7px; } to { opacity:1; transform:none; letter-spacing:1px; } }
 .revealctl { animation:fadeup .4s ease-out calc(var(--vd) + .5s) both; width:100%; text-align:center; }
 .revealctl .tag { display:inline-block; }
+/* p carries a max-width, so in a block parent it needs the auto margins to centre */
+.revealctl p { margin-left:auto; margin-right:auto; }
+/* the clock that readies you whether you act or not */
+.autordy { font-size:12px; color:var(--dim); margin-top:4px; font-variant-numeric:tabular-nums; min-height:16px; }
+.autordy.soon { color:var(--gold); font-weight:800; }
+/* the shortcut, pinned under the controls so it is findable without being loud */
+.keyhint { margin-top:10px; padding-top:9px; border-top:1px solid var(--line);
+  font-size:11px; color:var(--dim); letter-spacing:.4px; }
+.keyhint kbd { margin-right:5px; }
 /* the match result lands a beat after the round's, so the two read in order */
 .matchend { font-weight:900; font-size:27px; letter-spacing:1px; margin:10px 0 2px; text-align:center;
   animation:stampbig .6s cubic-bezier(.2,1.5,.4,1) calc(var(--vd) + .55s) both; }
