@@ -1343,7 +1343,7 @@ const MP = {
     const pips = this.history.map(h => '<div class="pip ' + (h === 'tie' ? 'tie' : h.toLowerCase()) + '"></div>').join('') +
       Array(Math.max(0, this.totalRounds() - this.history.length)).fill('<div class="pip"></div>').join('');
     const readyList = this.roster.map(r => '<span class="rdy ' + (r.ready ? 'y' : 'n') + '">' + esc(r.name) + (r.ready ? ' \u2713' : '') + '</span>').join(' ');
-    if (!p.done) {
+    {
       // your side counts up first, player by player, then theirs, then the verdict.
       // every step is a delay handed to the css, so there is no timer to cancel.
       const team = this.cfg.teamSize > 1;
@@ -1371,31 +1371,38 @@ const MP = {
           '<div class="ravg">' + p[side].toFixed(dec) + '</div>' +
           '<div class="rlab">' + (team ? 'average' : 'tiles') + '</div></div></div>';
       };
+      // the last round is still a round: it gets the same reveal, and the match result
+      // lands after it rather than replacing it
+      const champ = this.wins.A > this.wins.B ? 'A' : this.wins.B > this.wins.A ? 'B' : 'tie';
+      const series = '<div class="pips">' + pips + '</div>' +
+        '<p>Series: <b style="color:var(--acc)">' + this.wins.A + '</b> \u2013 <b style="color:#ffa657">' + this.wins.B + '</b></p>';
+      const ctl = p.done
+        ? series +
+          '<p class="tag">' + (this.cfg.format === 'triathlon' ? 'best of 3 \u00b7 10s, 20s, 30s' : 'best of ' + this.totalRounds() + ' \u00b7 ' + this.cfg.mode + 's') +
+            (this.cfg.teamSize > 1 ? ' \u00b7 2v2, team average' : '') + '</p>' +
+          '<div class="row">' + (this.host ? '<button class="primary" id="again">Back to lobby</button>' : '<div class="waiting">waiting for the host\u2026</div>') +
+          '<button class="ghost" id="bk">Leave</button></div>'
+        : series +
+          '<div class="row" id="rdyrow">' + readyList + '</div>' +
+          '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready for next round') + '</button></div>' +
+          '<div class="waiting">next round starts when everyone is ready</div>';
       // your team on the left, so the reveal reads left to right in the order it plays
-      show('<h2 class="rhead">Round ' + (this.round + 1) + '</h2>' +
+      show('<h2 class="rhead">Round ' + (this.round + 1) + (p.done ? ' \u00b7 final' : '') + '</h2>' +
         '<div class="cols"><div class="colmain">' +
         '<div class="reveal">' + panel(mine) + '<div class="rvs">VS</div>' + panel(mine === 'A' ? 'B' : 'A') + '</div>' +
         '<div class="verdict' + (tie ? ' tie' : won ? ' good' : ' bad') + '" style="--vd:' + vd + 's">' +
           (tie ? 'Round tied' : esc(head(p.winner)) + ' takes it') + '</div>' +
-        '<div class="revealctl" style="--vd:' + vd + 's">' +
-        '<div class="pips">' + pips + '</div>' +
-        '<p>Series: <b style="color:var(--acc)">' + this.wins.A + '</b> \u2013 <b style="color:#ffa657">' + this.wins.B + '</b></p>' +
-        '<div class="row" id="rdyrow">' + readyList + '</div>' +
-        '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready for next round') + '</button></div>' +
-        '<div class="waiting">next round starts when everyone is ready</div>' +
+        (p.done ? '<div class="matchend ' + (champ === 'tie' ? 'tie' : champ === mine ? 'good' : 'bad') + '" style="--vd:' + vd + 's">' +
+          (champ === 'tie' ? 'Match drawn' : champ === mine ? 'You win!' : 'You lose') + '</div>' : '') +
+        '<div class="revealctl' + (p.done ? ' late' : '') + '" style="--vd:' + vd + 's">' + ctl +
         '</div></div><div class="colside">' + this.CHAT_HTML() + '</div></div>', true);
-      $('rdy').onclick = () => this.setReady(!this.ready);
+      if (p.done) {
+        if (this.host) $('again').onclick = () => { this.ch.send({ type: 'broadcast', event: 'home', payload: {} }); };
+        $('bk').onclick = () => this.menu();
+      } else {
+        $('rdy').onclick = () => this.setReady(!this.ready);
+      }
       this.bindChat();
-    } else {
-      const champ = this.wins.A > this.wins.B ? 'A' : this.wins.B > this.wins.A ? 'B' : 'tie';
-      show('<h1>' + (champ === 'tie' ? 'Match drawn' : champ === mine ? 'You win!' : 'You lose') + '</h1>' +
-        '<div class="vs"><div class="sc a">' + this.wins.A + '</div><div>\u2013</div><div class="sc b">' + this.wins.B + '</div></div>' +
-        '<div class="pips">' + pips + '</div>' +
-        '<p>' + (this.cfg.format === 'triathlon' ? 'best of 3 \u00b7 10s, 20s, 30s' : 'best of 5 \u00b7 ' + this.cfg.mode + 's') + (this.cfg.teamSize > 1 ? ' \u00b7 2v2, team average' : '') + '</p>' +
-        '<div class="row">' + (this.host ? '<button class="primary" id="again">Back to lobby</button>' : '<div class="waiting">waiting for the host\u2026</div>') +
-        '<button class="ghost" id="bk">Leave</button></div>');
-      if (this.host) $('again').onclick = () => { this.ch.send({ type: 'broadcast', event: 'home', payload: {} }); };
-      $('bk').onclick = () => this.menu();
     }
   },
   bar() {
