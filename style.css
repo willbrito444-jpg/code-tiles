@@ -456,6 +456,20 @@ ol.bb li.me .rk { color:var(--acc); }
 .readybtn.on { background:linear-gradient(180deg,var(--good),#2fa35c); color:#06111a;
   border-color:var(--good); animation:none; transform:none; box-shadow:0 0 16px rgba(74,222,128,.35); }
 /* the opponent, before both sides have readied up */
+/* the moment somebody turns up: it used to look exactly like the idle screen */
+.foundbar { display:flex; flex-direction:column; align-items:center; gap:3px; margin-bottom:4px;
+  padding:11px 26px; border:1px solid var(--good); border-radius:14px;
+  background:linear-gradient(180deg,rgba(74,222,128,.16),rgba(74,222,128,.03));
+  box-shadow:0 0 26px rgba(74,222,128,.18);
+  animation:foundpop .45s cubic-bezier(.2,1.45,.4,1) both; }
+.foundbar b { font-size:25px; font-weight:900; letter-spacing:1.6px; color:#d6ffe4; }
+.foundbar span { font-size:12px; font-weight:700; letter-spacing:.4px; color:var(--good); }
+@keyframes foundpop {
+  0%  { opacity:0; transform:scale(.88) translateY(-10px); }
+  100%{ opacity:1; transform:none; }
+}
+@media (max-width: 620px) { .foundbar b { font-size:20px; } }
+@media (prefers-reduced-motion: reduce) { .foundbar { animation:none; } }
 .slot.veiled { align-items:center; justify-content:center; border-style:dashed; border-color:#36414f;
   background:repeating-linear-gradient(135deg,#0d131b 0 10px,#111823 10px 20px); }
 .slot.veiled .nm { justify-content:center; font-size:30px; color:#46525f; }
