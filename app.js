@@ -1041,7 +1041,8 @@ const MP = {
     if (state === 'idle') action = '<div class="row"><button class="primary" id="dfind">' + (need > 2 ? 'Find a match' : 'Find opponent') + '</button></div>';
     else if (state === 'searching') action = '<div class="waiting">waiting for ' + (need > 2 ? (need - 1) + ' more players' : 'someone') + ' to join\u2026</div><div class="row"><button class="ghost" id="dcan">Cancel</button></div>';
     else action = '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready up') + '</button></div>' +
-      '<div class="waiting">the duel starts once you are both ready</div>';
+      '<div class="waiting">the duel starts once you are both ready</div>' +
+      '<div class="keyhint"><kbd>R</kbd> ready up</div>';
     // the two boxes stay full width even with the chat alongside, so both banners read properly
     const head = '<div class="row">' + modes + '</div>';
     const tail = (err ? '<div class="err">' + esc(err) + '</div>' : '') + action +
@@ -1301,6 +1302,7 @@ const MP = {
         '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready up') + '</button>' +
         (this.host ? '<button class="primary" id="startm"' + (this.allReady() ? '' : ' disabled') + '>' + (have < need ? 'Waiting (' + have + '/' + need + ')' : this.allReady() ? 'Start match' : 'Waiting for ready') + '</button>' : '') + '</div>' +
         (this.host ? '' : '<div class="waiting">' + have + '/' + need + ' in \u00b7 host starts when everyone is ready</div>') +
+        '<div class="keyhint"><kbd>R</kbd> ready up</div>' +
         '<button class="ghost" id="bk">Leave</button>' +
       '</div><div class="colside">' + this.CHAT_HTML() + FRIENDS_HTML(true) + '</div></div>', true);
     $('bk').onclick = () => this.menu();
