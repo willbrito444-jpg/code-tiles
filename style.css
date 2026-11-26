@@ -123,6 +123,7 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
 .thmg i { width:26px; height:26px; border-radius:6px; background:#2b333d; color:var(--fg);
   font-style:normal; font-weight:800; font-size:15px; line-height:26px; text-align:center; }
 .thmn { font-size:10px; color:var(--dim); font-weight:500; letter-spacing:.3px; }
+.sndi { font-size:22px; line-height:26px; height:26px; }
 /* picture glyphs carry their own colour, so strip it in the picker and on the pad too */
 .thmpick.mono .thmg i { filter:grayscale(1); }
 #pad.mono button { filter:grayscale(1); }
