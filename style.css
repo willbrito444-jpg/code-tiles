@@ -207,6 +207,7 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
   .verdict { font-size:14px; }
 }
 @media (prefers-reduced-motion: reduce) { .slot.empty.searching { animation:none; } }
+@media (prefers-reduced-motion: reduce) { .readybtn, .revealin { animation:none; } }
 
 
 /* ---- banners: the whole lobby box, worn one at a time ---- */
@@ -413,8 +414,30 @@ ol.bb li.me .rk { color:var(--acc); }
 .fmtbtn.on { background:var(--pur); border-color:var(--pur); color:#06111a; }
 #mpbar { display:none; font-size:12px; color:var(--dim); text-align:center; }
 #mpbar b { color:var(--fg); }
-.readybtn { padding:10px 24px; font-size:15px; font-weight:800; }
-.readybtn.on { background:linear-gradient(180deg,var(--good),#2fa35c); color:#06111a; border-color:var(--good); }
+/* people were missing this between rounds, so it asks to be pressed */
+.readybtn { padding:14px 34px; font-size:17px; font-weight:900; letter-spacing:.5px;
+  border-color:rgba(74,222,128,.55); color:#bdf5d2;
+  animation:readynudge 1.25s ease-in-out infinite; }
+@keyframes readynudge {
+  0%,100% { box-shadow:0 0 0 0 rgba(74,222,128,.45), 0 0 14px rgba(74,222,128,.18); transform:scale(1); }
+  50%     { box-shadow:0 0 0 7px rgba(74,222,128,0), 0 0 22px rgba(74,222,128,.3); transform:scale(1.035); }
+}
+/* once you are ready it stops asking and just confirms */
+.readybtn.on { background:linear-gradient(180deg,var(--good),#2fa35c); color:#06111a;
+  border-color:var(--good); animation:none; transform:none; box-shadow:0 0 16px rgba(74,222,128,.35); }
+/* the opponent, before both sides have readied up */
+.slot.veiled { align-items:center; justify-content:center; border-style:dashed; border-color:#36414f;
+  background:repeating-linear-gradient(135deg,#0d131b 0 10px,#111823 10px 20px); }
+.slot.veiled .nm { justify-content:center; font-size:30px; color:#46525f; }
+.slot.veiled .bns { justify-content:center; }
+.slot.veiled .bn { font-style:italic; }
+/* and the moment it comes off */
+.revealin { animation:revealcard .62s cubic-bezier(.2,1.35,.4,1) both; transform-origin:50% 50%; }
+@keyframes revealcard {
+  0%   { opacity:0; transform:rotateY(90deg) scale(.92); filter:brightness(2.2); }
+  60%  { opacity:1; filter:brightness(1.35); }
+  100% { opacity:1; transform:none; filter:none; }
+}
 
 /* ---- chat ---- */
 .chat { border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.02); display:flex; flex-direction:column; height:300px; }
