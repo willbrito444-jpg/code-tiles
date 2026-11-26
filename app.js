@@ -482,6 +482,12 @@ async function fetchStats(ids) {
 }
 // rarity, rarest last — the sort below puts the rarest banner first
 const RARITY = ['common', 'uncommon', 'rare', 'epic', 'mythic', 'world', 'og'];
+// the score tiers are still guesses pinned to one strong player's results, so a colour
+// would be claiming a rarity nobody has earned yet. the tiers still sort the badges and
+// still unlock them; they just render plain until there are enough players to calibrate.
+// og and the world ranks keep their colour: those are measured against real players.
+const RARITY_COLOURS = false;
+const rarCls = b => (RARITY_COLOURS || b.rar === 'og' || b.rar === 'world') ? ' r-' + b.rar : '';
 const TIER_RARITY = ['common', 'uncommon', 'rare', 'epic'];
 const GAMES_TIERS = [[10, 'common'], [100, 'uncommon'], [1000, 'rare']];
 const DUEL_TIERS = [[10, 'common'], [50, 'uncommon'], [250, 'rare']];
@@ -849,7 +855,7 @@ async function profileScreen() {
     return nx ? '<div class="empty">' + MODE_ICON[m] + ' next: <b>' + nx[1] + '</b> for ' + nx[0] + '</div>' : '<div class="empty">' + MODE_ICON[m] + ' every tier cleared</div>';
   }).join('');
   const bannerList = all.length
-    ? picks.map(b => '<button class="bnpick small r-' + b.rar + (chosen.includes(b.id) ? ' on' : '') + '" data-b="' + b.id + '">' + b.label + '</button>').join('')
+    ? picks.map(b => '<button class="bnpick small' + rarCls(b) + (chosen.includes(b.id) ? ' on' : '') + '" data-b="' + b.id + '">' + b.label + '</button>').join('')
     : '<div class="empty">no banners yet \u2014 they unlock from your scores</div>';
   show('<h1>Profile</h1><h2>' + esc(me.username) + '</h2>' +
     '<div class="cols" style="max-width:660px"><div class="colmain" style="min-width:280px">' +
@@ -935,7 +941,7 @@ function ribLines(label) {
 }
 function playerCardHTML(name, sk, badges, isMe, ready) {
   const rib = sk && sk.cls !== 'none' ? '<span class="ribbon rb-' + sk.cls + '">' + ribLines(sk.label) + '</span>' : '';
-  const bns = (badges || []).map(b => b.band ? wbHTML(b) : '<span class="bn r-' + b.rar + '">' + b.label + '</span>').join('');
+  const bns = (badges || []).map(b => b.band ? wbHTML(b) : '<span class="bn' + rarCls(b) + '">' + b.label + '</span>').join('');
   const skin = sk && sk.cls !== 'none' ? ' bnr-' + sk.cls : '';
   return '<div class="slot filled' + skin + '">' + rib + mascotHTML(sk && sk.modes) +
     '<div class="nm"><span>' + esc(name) + (isMe ? ' <span class="you">(you)</span>' : '') + '</span>' +
