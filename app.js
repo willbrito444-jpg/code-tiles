@@ -1424,11 +1424,85 @@ document.querySelectorAll('#pad button').forEach(b => b.addEventListener('pointe
 rebuildKeys();
 applyTheme(ls.get('codeTilesTheme', 'brackets'));
 applySound(ls.get('codeTilesSound', 'classic'));
+/* ---------- preview: the duel screens, dry, with a stand-in opponent ----------
+   add ?preview to the url. no channel, no presence, no scores written: this exists so
+   the 1v1 and 2v2 screens can be looked at without a second account, and without
+   putting a throwaway player on the leaderboard or burning an OG number. */
+function previewDuel() {
+  const foeStats = { 10: { best: 58, c1: 1, c2: 1, games: 61, clean_best: 40 },
+                     20: { best: 118, c1: 1, c2: 1, games: 44, clean_best: 96 },
+                     30: { best: 166, c1: 1, c2: 1, c3: 1, games: 29, clean_best: 121 }, og: 7, duels: 12 };
+  const matesStats = { 20: { best: 104, c1: 1, games: 12, clean_best: 80 } };
+  const mk = (pid, name) => ({ pid: pid, name: name, ready: true });
+  const meRow = mk(me.id, me.username);
+  const foe = mk('pv-foe', 'RIVAL'), mate = mk('pv-mate', 'PARTNER'), foe2 = mk('pv-foe2', 'NEMESIS');
+  const dress = (roster, statsFor) => {
+    MP.skins = {}; MP.banners = {};
+    roster.forEach(p => {
+      const st = p.pid === me.id ? myStats : statsFor(p.pid);
+      MP.skins[p.pid] = p.pid === me.id ? pickSkin(myStats, myBanner, myWorld) : pickSkin(st, 'og', null);
+      MP.banners[p.pid] = p.pid === me.id
+        ? visibleBadges(earnedBanners(myStats, true), myShown, myWorld)
+        : visibleBadges(earnedBanners(st, false), null, null);
+    });
+  };
+  const statsFor = id => id === 'pv-mate' ? matesStats : foeStats;
+  const setSolo = () => { MP.cfg = { format: 'shootout', mode: 20, teamSize: 1, rounds: 3, quick: true };
+    MP.roster = [meRow, foe]; MP.myTeam = 'A'; dress(MP.roster, statsFor); };
+  const setDuo = () => { MP.cfg = { format: 'shootout', mode: 20, teamSize: 2, rounds: 3, quick: true };
+    MP.roster = [meRow, foe, mate, foe2]; MP.myTeam = 'A'; dress(MP.roster, statsFor); };
+  const result = (team, winner) => ({
+    round: 1, A: team ? 108.5 : 117, B: team ? 101 : 103, winner: winner, done: false,
+    wins: { A: 1, B: 0 }, history: ['A'],
+    scores: { [me.id]: 117, 'pv-mate': 100, 'pv-foe': 103, 'pv-foe2': 99 },
+    roster: MP.roster.map((p, i) => ({ pid: p.pid, name: p.name, team: MP.teamOf(i) }))
+  });
+  const steps = [
+    ['1v1 searching', () => { setSolo(); MP.roster = []; MP.phase = 'none'; MP.duelTeam = 1; MP.renderDuel('searching'); }],
+    ['1v1 found, hidden', () => { setSolo(); MP.phase = 'lobby'; MP.duelTeam = 1; MP.revealed = false; MP.ready = false; MP.renderDuel('found'); }],
+    ['1v1 you are ready', () => { setSolo(); MP.phase = 'lobby'; MP.duelTeam = 1; MP.revealed = false; MP.ready = true; MP.renderDuel('found'); }],
+    ['1v1 revealed', () => { setSolo(); MP.phase = 'lobby'; MP.duelTeam = 1; MP.revealed = true; MP.ready = true; MP.renderDuel('found'); }],
+    ['2v2 found, hidden', () => { setDuo(); MP.phase = 'lobby'; MP.duelTeam = 2; MP.revealed = false; MP.ready = false; MP.renderDuel('found'); }],
+    ['2v2 revealed', () => { setDuo(); MP.phase = 'lobby'; MP.duelTeam = 2; MP.revealed = true; MP.ready = true; MP.renderDuel('found'); }],
+    ['1v1 round won', () => { setSolo(); MP.phase = 'between'; MP.round = 1; MP.wins = { A: 1, B: 0 }; MP.history = ['A'];
+      MP.ready = false; MP.lastResult = result(false, 'A'); MP._shownRound = -1; MP.resultScreen(); }],
+    ['1v1 round lost', () => { setSolo(); MP.phase = 'between'; MP.round = 1; MP.wins = { A: 0, B: 1 }; MP.history = ['B'];
+      MP.ready = false; MP.lastResult = result(false, 'B'); MP._shownRound = -1; MP.resultScreen(); }],
+    ['1v1 round tied', () => { setSolo(); MP.phase = 'between'; MP.round = 1; MP.wins = { A: 0, B: 0 }; MP.history = ['tie'];
+      MP.ready = false; MP.lastResult = result(false, 'tie'); MP._shownRound = -1; MP.resultScreen(); }],
+    ['2v2 round won', () => { setDuo(); MP.phase = 'between'; MP.round = 1; MP.wins = { A: 1, B: 0 }; MP.history = ['A'];
+      MP.ready = false; MP.lastResult = result(true, 'A'); MP._shownRound = -1; MP.resultScreen(); }],
+    ['match won', () => { setSolo(); MP.phase = 'done'; MP.round = 2; MP.wins = { A: 2, B: 1 }; MP.history = ['A', 'B', 'A'];
+      MP.lastResult = Object.assign(result(false, 'A'), { done: true }); MP.resultScreen(); }],
+    ['match drawn', () => { setSolo(); MP.phase = 'done'; MP.round = 2; MP.wins = { A: 1, B: 1 }; MP.history = ['A', 'B', 'tie'];
+      MP.lastResult = Object.assign(result(false, 'tie'), { done: true, wins: { A: 1, B: 1 } }); MP.resultScreen(); }]
+  ];
+  let at = 0;
+  const bar = document.createElement('div');
+  bar.id = 'pvbar';
+  document.body.appendChild(bar);
+  const go = n => {
+    at = (n + steps.length) % steps.length;
+    bar.innerHTML = '<button id="pvp">\u2039</button><b>' + (at + 1) + '/' + steps.length + '</b>' +
+      '<span>' + steps[at][0] + '</span><button id="pvn">\u203a</button><button id="pvr">replay</button>' +
+      '<button id="pvx">exit</button>';
+    $('pvp').onclick = () => go(at - 1);
+    $('pvn').onclick = () => go(at + 1);
+    $('pvr').onclick = () => go(at);
+    $('pvx').onclick = () => { bar.remove(); MP.revealed = false; MP.roster = []; MP.phase = 'none'; MP.cfg = { format: 'shootout', mode: 20, teamSize: 1 }; home(); };
+    try { steps[at][1](); } catch (e) { show('<h2>preview failed</h2><p>' + esc(String(e)) + '</p>'); }
+  };
+  go(0);
+}
+
 show('<h1 class="hero">Code Tiles</h1><div class="waiting">loading\u2026</div>', true);
 (async () => {
   for (let i = 0; i < 40 && !window.supabase; i++) await new Promise(r => setTimeout(r, 100));
   if (!window.supabase) { show('<h1>Offline</h1><p>Could not reach the server. Reload to try again.</p>'); return; }
   const ok = await loadSession();
-  if (ok) { startPresence(); await loadFriends(); await loadMyProfile(); home(); } else loginScreen('', 'in');
+  if (!ok) return loginScreen('', 'in');
+  startPresence(); await loadFriends(); await loadMyProfile();
+  if (/[?&]preview\b/.test(location.search)) return previewDuel();
+  home();
 })();
 })();
