@@ -716,6 +716,12 @@ function toastInvite(p) {
 
 /* ---------- accounts ---------- */
 const emailFor = n => n.toLowerCase().replace(/[^a-z0-9_]/g, '') + '@' + EMAIL_DOMAIN;
+// supabase auth refuses anything under 6 characters, so a short password is padded past
+// that floor. only passwords under 6 are touched, which is why every account made before
+// this still signs in: those go through unchanged and still match their stored hash.
+// NEVER change this string: every account with a short password is hashed against it.
+const PW_PAD = '.ct-pad.2026';
+const padPw = p => p.length >= 6 ? p : p + PW_PAD;
 async function loadSession() {
   const c = client(); if (!c) return false;
   const { data } = await c.auth.getSession();
@@ -736,18 +742,18 @@ function loginScreen(err, mode) {
     (err ? '<div class="err">' + esc(err) + '</div>' : '') +
     '<div class="row"><button class="primary" id="doit">' + (mode === 'up' ? 'Create account' : 'Sign in') + '</button></div>' +
     '<div class="row"><button class="ghost" id="swap">' + (mode === 'up' ? 'I already have an account' : 'Create an account') + '</button></div>' +
-    '<p>Passwords need 6 characters or more.</p>', true);
+    '<p>Passwords need 4 characters or more.</p>', true);
   $('swap').onclick = () => loginScreen('', mode === 'up' ? 'in' : 'up');
   const go = async () => {
     const u = ($('u').value || '').trim().toUpperCase(), p = $('p').value || '';
     if (!u.length) return loginScreen('Enter a username.', mode);
     if (!/^[A-Z0-9_]+$/.test(u)) return loginScreen('Usernames can use letters, numbers and _ only.', mode);
-    if (p.length < 6) return loginScreen('Password needs at least 6 characters.', mode);
+    if (p.length < 4) return loginScreen('Password needs at least 4 characters.', mode);
     $('doit').disabled = true; $('doit').textContent = 'working\u2026';
     const c = client();
     try {
       if (mode === 'up') {
-        const { data, error } = await c.auth.signUp({ email: emailFor(u), password: p });
+        const { data, error } = await c.auth.signUp({ email: emailFor(u), password: padPw(p) });
         if (error) throw error;
         if (!data.session) throw new Error('That username is taken.');
         token = data.session.access_token;
@@ -755,7 +761,7 @@ function loginScreen(err, mode) {
         if (!r.ok) { await c.auth.signOut(); token = null; throw new Error('That username is taken.'); }
         me = { id: data.session.user.id, username: u };
       } else {
-        const { data, error } = await c.auth.signInWithPassword({ email: emailFor(u), password: p });
+        const { data, error } = await c.auth.signInWithPassword({ email: emailFor(u), password: padPw(p) });
         if (error) throw new Error('Wrong username or password.');
         token = data.session.access_token;
         const r = await fetch(SUPABASE.url + '/rest/v1/profiles?select=id,username&id=eq.' + data.session.user.id, { headers: headers() });
