@@ -223,9 +223,10 @@ function loop(now) {
 }
 function finish() {
   beep(523, .15, 'triangle', .1); setTimeout(() => beep(659, .15, 'triangle', .1), 120); setTimeout(() => beep(784, .3, 'triangle', .1), 240);
-  const pb = score > best;
+  // practice is inert: it writes no row and does not move your best
+  const pb = !PRACTICE && score > best;
   if (pb) { best = score; ls.set('codeTilesSprint' + DURATION, best); $('best').textContent = best; }
-  const logging = logRun(DURATION, score, misses);
+  const logging = PRACTICE ? null : logRun(DURATION, score, misses);
   if (onRoundEnd) { const cb = onRoundEnd; onRoundEnd = null; cb(score); return; }
   soloResult(pb, logging);
 }
@@ -970,6 +971,7 @@ const MP = {
   },
 
   menu() {
+    if (PRACTICE) return practiceMenu();
     this.leave(); running = false; $('mpbar').style.display = 'none';
     if (!client()) { show('<h1>Offline</h1><p>Multiplayer needs the network and it did not load. Try reloading.</p><button class="ghost" id="bk">Back</button>'); $('bk').onclick = home; return; }
     show('<h1>Lobby</h1><p>Create a lobby and share the code, or invite a friend who is online.</p>' +
@@ -1220,6 +1222,7 @@ const MP = {
 
   banners: {},
   async loadRosterBanners() {
+    if (PRACTICE) return;  // bot ids are not profiles; practice dresses its own roster
     const ids = this.roster.map(p => p.pid);
     if (!ids.length) return;
     const key = ids.slice().sort().join(',');
@@ -1430,77 +1433,112 @@ document.querySelectorAll('#pad button').forEach(b => b.addEventListener('pointe
 rebuildKeys();
 applyTheme(ls.get('codeTilesTheme', 'brackets'));
 applySound(ls.get('codeTilesSound', 'classic'));
-/* ---------- preview: the duel screens, dry, with a stand-in opponent ----------
-   add ?preview to the url. no channel, no presence, no scores written: this exists so
-   the 1v1 and 2v2 screens can be looked at without a second account, and without
-   putting a throwaway player on the leaderboard or burning an OG number. */
-function previewDuel() {
-  const foeStats = { 10: { best: 58, c1: 1, c2: 1, games: 61, clean_best: 40 },
-                     20: { best: 118, c1: 1, c2: 1, games: 44, clean_best: 96 },
-                     30: { best: 166, c1: 1, c2: 1, c3: 1, games: 29, clean_best: 121 }, og: 7, duels: 12 };
-  const matesStats = { 20: { best: 104, c1: 1, games: 12, clean_best: 80 } };
-  const mk = (pid, name) => ({ pid: pid, name: name, ready: true });
-  const meRow = mk(me.id, me.username);
-  const foe = mk('pv-foe', 'RIVAL'), mate = mk('pv-mate', 'PARTNER'), foe2 = mk('pv-foe2', 'NEMESIS');
-  const dress = (roster, statsFor) => {
-    MP.skins = {}; MP.banners = {};
-    roster.forEach(p => {
-      const st = p.pid === me.id ? myStats : statsFor(p.pid);
-      MP.skins[p.pid] = p.pid === me.id ? pickSkin(myStats, myBanner, myWorld) : pickSkin(st, 'og', null);
-      MP.banners[p.pid] = p.pid === me.id
-        ? visibleBadges(earnedBanners(myStats, true), myShown, myWorld)
-        : visibleBadges(earnedBanners(st, false), null, null);
-    });
-  };
-  const statsFor = id => id === 'pv-mate' ? matesStats : foeStats;
-  const setSolo = () => { MP.cfg = { format: 'shootout', mode: 20, teamSize: 1, rounds: 3, quick: true };
-    MP.roster = [meRow, foe]; MP.myTeam = 'A'; dress(MP.roster, statsFor); };
-  const setDuo = () => { MP.cfg = { format: 'shootout', mode: 20, teamSize: 2, rounds: 3, quick: true };
-    MP.roster = [meRow, foe, mate, foe2]; MP.myTeam = 'A'; dress(MP.roster, statsFor); };
-  const result = (team, winner) => ({
-    round: 1, A: team ? 108.5 : 117, B: team ? 101 : 103, winner: winner, done: false,
-    wins: { A: 1, B: 0 }, history: ['A'],
-    scores: { [me.id]: 117, 'pv-mate': 100, 'pv-foe': 103, 'pv-foe2': 99 },
-    roster: MP.roster.map((p, i) => ({ pid: p.pid, name: p.name, team: MP.teamOf(i) }))
-  });
-  const steps = [
-    ['1v1 searching', () => { setSolo(); MP.roster = []; MP.phase = 'none'; MP.duelTeam = 1; MP.renderDuel('searching'); }],
-    ['1v1 found, hidden', () => { setSolo(); MP.phase = 'lobby'; MP.duelTeam = 1; MP.revealed = false; MP.ready = false; MP.renderDuel('found'); }],
-    ['1v1 you are ready', () => { setSolo(); MP.phase = 'lobby'; MP.duelTeam = 1; MP.revealed = false; MP.ready = true; MP.renderDuel('found'); }],
-    ['1v1 revealed', () => { setSolo(); MP.phase = 'lobby'; MP.duelTeam = 1; MP.revealed = true; MP.ready = true; MP.renderDuel('found'); }],
-    ['2v2 found, hidden', () => { setDuo(); MP.phase = 'lobby'; MP.duelTeam = 2; MP.revealed = false; MP.ready = false; MP.renderDuel('found'); }],
-    ['2v2 revealed', () => { setDuo(); MP.phase = 'lobby'; MP.duelTeam = 2; MP.revealed = true; MP.ready = true; MP.renderDuel('found'); }],
-    ['1v1 round won', () => { setSolo(); MP.phase = 'between'; MP.round = 1; MP.wins = { A: 1, B: 0 }; MP.history = ['A'];
-      MP.ready = false; MP.lastResult = result(false, 'A'); MP._shownRound = -1; MP.resultScreen(); }],
-    ['1v1 round lost', () => { setSolo(); MP.phase = 'between'; MP.round = 1; MP.wins = { A: 0, B: 1 }; MP.history = ['B'];
-      MP.ready = false; MP.lastResult = result(false, 'B'); MP._shownRound = -1; MP.resultScreen(); }],
-    ['1v1 round tied', () => { setSolo(); MP.phase = 'between'; MP.round = 1; MP.wins = { A: 0, B: 0 }; MP.history = ['tie'];
-      MP.ready = false; MP.lastResult = result(false, 'tie'); MP._shownRound = -1; MP.resultScreen(); }],
-    ['2v2 round won', () => { setDuo(); MP.phase = 'between'; MP.round = 1; MP.wins = { A: 1, B: 0 }; MP.history = ['A'];
-      MP.ready = false; MP.lastResult = result(true, 'A'); MP._shownRound = -1; MP.resultScreen(); }],
-    ['match won', () => { setSolo(); MP.phase = 'done'; MP.round = 2; MP.wins = { A: 2, B: 1 }; MP.history = ['A', 'B', 'A'];
-      MP.lastResult = Object.assign(result(false, 'A'), { done: true }); MP.resultScreen(); }],
-    ['match drawn', () => { setSolo(); MP.phase = 'done'; MP.round = 2; MP.wins = { A: 1, B: 1 }; MP.history = ['A', 'B', 'tie'];
-      MP.lastResult = Object.assign(result(false, 'tie'), { done: true, wins: { A: 1, B: 1 } }); MP.resultScreen(); }]
-  ];
-  let at = 0;
-  const bar = document.createElement('div');
-  bar.id = 'pvbar';
-  document.body.appendChild(bar);
-  const go = n => {
-    at = (n + steps.length) % steps.length;
-    bar.innerHTML = '<button id="pvp">\u2039</button><b>' + (at + 1) + '/' + steps.length + '</b>' +
-      '<span>' + steps[at][0] + '</span><button id="pvn">\u203a</button><button id="pvr">replay</button>' +
-      '<button id="pvx">exit</button>';
-    $('pvp').onclick = () => go(at - 1);
-    $('pvn').onclick = () => go(at + 1);
-    $('pvr').onclick = () => go(at);
-    $('pvx').onclick = () => { bar.remove(); MP.revealed = false; MP.roster = []; MP.phase = 'none'; MP.cfg = { format: 'shootout', mode: 20, teamSize: 1 }; home(); };
-    try { steps[at][1](); } catch (e) { show('<h2>preview failed</h2><p>' + esc(String(e)) + '</p>'); }
-  };
-  go(0);
+/* ---------- practice: the real duel, played against bots ----------
+   add ?preview to the url. this is not a mock of the duel screens: it is the duel,
+   with the supabase channel swapped for one that talks to itself. every screen, the
+   countdown, the reveal, the scoring and the series are the real code paths, so what
+   is practised here is what happens in a live match. nothing is written: no score
+   row, no change to your best, no presence, no network. */
+let PRACTICE = false;
+const BOT_NAMES = ['RIVAL', 'NEMESIS', 'ECHO', 'VOLT', 'NOVA'];
+// tiles per second. the live boards sit near 3.4 (10s) up to 5 (30s), so normal is
+// about an even match and hard is above anything logged so far.
+const BOT_RATE = { easy: 3.1, normal: 4.3, hard: 5.4 };
+function botScore(mode, diff) {
+  const rate = BOT_RATE[diff] || BOT_RATE.normal;
+  // three uniforms make a rough bell, so a bot is not metronomic round to round
+  const spread = (Math.random() + Math.random() + Math.random() - 1.5) * mode * .17;
+  return Math.max(1, Math.round(rate * mode + spread));
 }
-
+// a channel that talks only to itself. send comes straight back, the way supabase
+// behaves with self:true, and presence is a plain object the bots are seated in.
+function localChannel() {
+  const subs = []; const pres = {}; let onSync = null;
+  const ch = {
+    on(type, filter, cb) { if (type === 'presence') onSync = cb; else subs.push({ e: filter.event, cb: cb }); return ch; },
+    subscribe(cb) { setTimeout(() => cb('SUBSCRIBED'), 0); return ch; },
+    send(m) { setTimeout(() => subs.forEach(x => { if (x.e === m.event) x.cb({ payload: m.payload }); }), 0); return Promise.resolve('ok'); },
+    track(p) { pres[p.pid] = [p]; if (onSync) setTimeout(onSync, 0); return Promise.resolve('ok'); },
+    presenceState() { return pres; },
+    unsubscribe() { subs.length = 0; onSync = null; return Promise.resolve('ok'); },
+    seat(p) { pres[p.pid] = [p]; }
+  };
+  return ch;
+}
+function practiceStop() {
+  if (MP.practice) (MP.practice.timers || []).forEach(clearTimeout);
+  MP.practice = null;
+}
+// the bots "play" the round: they report a score once the clock would have run out
+function practiceBots(p) {
+  if (!PRACTICE || !MP.practice) return;
+  const after = 3200 + p.mode * 1000;
+  MP.practice.bots.forEach((b, i) => {
+    MP.practice.timers.push(setTimeout(() => {
+      if (!PRACTICE || !MP.ch) return;
+      MP.ch.send({ type: 'broadcast', event: 'score', payload: { round: p.round, pid: b.pid, score: botScore(p.mode, MP.practice.diff) } });
+    }, after + 300 + i * 140 + Math.random() * 800));
+  });
+}
+function practiceStart(teamSize, mode, diff) {
+  MP.leave(); practiceStop();
+  PRACTICE = true;
+  // joinedAt 0 seats me first, so roster order (and therefore teams) is predictable:
+  // index 1 and 3 are opponents, index 2 is my partner
+  MP.code = 'PRACTICE'; MP.host = true; MP.joinedAt = 0; MP.phase = 'lobby';
+  MP.ready = false; MP.chat = []; MP.advancing = false; MP.bannerKey = 'practice';
+  MP.wins = { A: 0, B: 0 }; MP.history = []; MP.round = 0; MP.revealed = false;
+  MP.duelTeam = teamSize;
+  MP.cfg = { format: 'shootout', mode: mode, teamSize: teamSize, rounds: 3, quick: true };
+  const bots = [];
+  for (let i = 1; i < teamSize * 2; i++) bots.push({ pid: 'bot-' + i, name: BOT_NAMES[i - 1], at: i, host: false, ready: true });
+  MP.practice = { diff: diff, bots: bots, timers: [] };
+  const ch = localChannel();
+  MP.ch = ch;
+  ch.on('presence', { event: 'sync' }, () => MP.syncRoster())
+    .on('broadcast', { event: 'chat' }, ({ payload }) => MP.onChat(payload))
+    .on('broadcast', { event: 'start' }, ({ payload }) => MP.onStart(payload))
+    .on('broadcast', { event: 'score' }, ({ payload }) => MP.onScore(payload))
+    .on('broadcast', { event: 'result' }, ({ payload }) => MP.onResult(payload))
+    .on('broadcast', { event: 'reveal' }, () => { MP.revealed = true; MP.renderDuel('found'); })
+    .on('broadcast', { event: 'start' }, ({ payload }) => practiceBots(payload));
+  bots.forEach(b => ch.seat(b));
+  // dressed here because loadRosterBanners is skipped: bots are not profiles
+  MP.skins = {}; MP.banners = {};
+  MP.skins[me.id] = pickSkin(myStats, myBanner, myWorld);
+  MP.banners[me.id] = visibleBadges(earnedBanners(myStats, true), myShown, myWorld);
+  bots.forEach(b => { MP.skins[b.pid] = null; MP.banners[b.pid] = [{ id: 'bot', rar: 'common', label: '\uD83E\uDD16 bot' }]; });
+  ch.subscribe(s => { if (s === 'SUBSCRIBED') { MP.track(); MP.renderDuel('found'); } });
+}
+function practiceMenu() {
+  MP.leave(); practiceStop(); PRACTICE = false;
+  running = false; $('mpbar').style.display = 'none';
+  const st = ls.get('ctPractice', '1|20|normal').split('|');
+  let sz = +st[0] || 1, md = +st[1] || 20, df = st[2] || 'normal';
+  const draw = () => {
+    ls.set('ctPractice', sz + '|' + md + '|' + df);
+    show('<h1>Practice</h1><p class="tag">the real duel against bots \u00b7 nothing is saved</p>' +
+      '<div class="friends"><h4>MATCH</h4><div class="row">' +
+      [1, 2].map(n => '<button class="ghost fmtbtn' + (sz === n ? ' on' : '') + '" data-p="sz" data-v="' + n + '">' + n + 'v' + n + '</button>').join('') +
+      '</div><div class="row">' +
+      [10, 20, 30].map(n => '<button class="ghost fmtbtn' + (md === n ? ' on' : '') + '" data-p="md" data-v="' + n + '">' + MODE_ICON[n] + ' ' + n + 's</button>').join('') +
+      '</div></div>' +
+      '<div class="friends"><h4>BOTS</h4><div class="row">' +
+      [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']].map(d =>
+        '<button class="ghost fmtbtn' + (df === d[0] ? ' on' : '') + '" data-p="df" data-v="' + d[0] + '">' + d[1] + '</button>').join('') +
+      '</div><div class="empty">about ' + Math.round(BOT_RATE[df] * md) + ' tiles over ' + md + 's</div></div>' +
+      '<div class="row"><button class="primary" id="pgo">Start practice</button></div>' +
+      '<div class="row"><button class="ghost" id="pexit">Back to the game</button></div>', true);
+    document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
+      const v = b.dataset.v;
+      if (b.dataset.p === 'sz') sz = +v; else if (b.dataset.p === 'md') md = +v; else df = v;
+      draw();
+    });
+    $('pgo').onclick = () => practiceStart(sz, md, df);
+    $('pexit').onclick = () => { PRACTICE = false; history.replaceState(null, '', location.pathname); home(); };
+  };
+  draw();
+}
 show('<h1 class="hero">Code Tiles</h1><div class="waiting">loading\u2026</div>', true);
 (async () => {
   for (let i = 0; i < 40 && !window.supabase; i++) await new Promise(r => setTimeout(r, 100));
@@ -1508,7 +1546,7 @@ show('<h1 class="hero">Code Tiles</h1><div class="waiting">loading\u2026</div>',
   const ok = await loadSession();
   if (!ok) return loginScreen('', 'in');
   startPresence(); await loadFriends(); await loadMyProfile();
-  if (/[?&]preview\b/.test(location.search)) return previewDuel();
+  if (/[?&]preview\b/.test(location.search)) return practiceMenu();
   home();
 })();
 })();
