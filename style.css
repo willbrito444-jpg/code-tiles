@@ -377,10 +377,18 @@ input { font:inherit; padding:8px 10px; border:1px solid #273039; border-radius:
   animation:stampbig .5s cubic-bezier(.2,1.5,.4,1) var(--vd) both; }
 .verdict.good { color:var(--gold); } .verdict.bad { color:#ff6b6b; } .verdict.tie { color:var(--dim); }
 @keyframes stampbig { from { opacity:0; transform:scale(1.5); letter-spacing:7px; } to { opacity:1; transform:none; letter-spacing:1px; } }
-.revealctl { animation:fadeup .4s ease-out calc(var(--vd) + .5s) both; width:100%; }
+.revealctl { animation:fadeup .4s ease-out calc(var(--vd) + .5s) both; width:100%; text-align:center; }
+.revealctl .tag { display:inline-block; }
+/* the match result lands a beat after the round's, so the two read in order */
+.matchend { font-weight:900; font-size:27px; letter-spacing:1px; margin:10px 0 2px; text-align:center;
+  animation:stampbig .6s cubic-bezier(.2,1.5,.4,1) calc(var(--vd) + .55s) both; }
+.matchend.good { color:var(--gold); text-shadow:0 0 22px rgba(255,208,70,.45); }
+.matchend.bad { color:#ff6b6b; }
+.matchend.tie { color:var(--dim); }
+.revealctl.late { animation-delay:calc(var(--vd) + 1.15s); }
 @keyframes fadeup { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 @media (prefers-reduced-motion: reduce) {
-  .rteam > *, .rrow, .rvs, .verdict, .revealctl, .rteam::before, .rteam::after { animation-duration:1ms; animation-delay:0s; }
+  .rteam > *, .rrow, .rvs, .verdict, .matchend, .revealctl, .revealctl.late, .rteam::before, .rteam::after { animation-duration:1ms; animation-delay:0s; }
   .rrow { opacity:1; }
 }
 @media (prefers-reduced-motion: reduce) { .r-epic, .r-mythic, .r-og { animation:none; } }
