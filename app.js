@@ -174,6 +174,8 @@ function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.a
 
 /* ---------- game ---------- */
 let DURATION = +ls.get('codeTilesMode', 30) || 30;
+// the tutorial drives the real field, so it has to be told not to record
+let TUTOR = false;
 let tiles = [], score = 0, best = 0, timeLeft = DURATION, running = false, started = false, waitForFirstKey = true;
 let last = 0, freeze = 0, frozenTotal = 0, misses = 0, wrongLane = -1, offset = 0, note = 0, lastLane = -1;
 let rng = Math.random, onRoundEnd = null;
@@ -225,10 +227,11 @@ function loop(now) {
 }
 function finish() {
   beep(523, .15, 'triangle', .1); setTimeout(() => beep(659, .15, 'triangle', .1), 120); setTimeout(() => beep(784, .3, 'triangle', .1), 240);
-  // practice is inert: it writes no row and does not move your best
-  const pb = !PRACTICE && score > best;
+  // practice and the tutorial are inert: no row written, and your best does not move
+  const inert = PRACTICE || TUTOR;
+  const pb = !inert && score > best;
   if (pb) { best = score; ls.set('codeTilesSprint' + DURATION, best); $('best').textContent = best; }
-  const logging = PRACTICE ? null : logRun(DURATION, score, misses);
+  const logging = inert ? null : logRun(DURATION, score, misses);
   if (onRoundEnd) { const cb = onRoundEnd; onRoundEnd = null; cb(score); return; }
   soloResult(pb, logging);
 }
@@ -772,6 +775,8 @@ function loginScreen(err, mode) {
         me = rows.length ? { id: rows[0].id, username: rows[0].username } : { id: data.session.user.id, username: u };
       }
       startPresence(); await loadFriends(); home();
+      // a new account has never seen the keys, let alone a duel
+      if (mode === 'up') TUT.start();
     } catch (e) { loginScreen(e && e.message ? e.message : 'That did not work.', mode); }
   };
   $('doit').onclick = go;
@@ -799,8 +804,10 @@ function home() {
       (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
     KEYS_HTML() + LB_HTML() +
     '<p>Signed in as <b>' + esc(me ? me.username : '') + '</b> \u00b7 <a href="#" id="out" style="color:var(--dim)">sign out</a><br>' +
-    'A wrong key <b style="color:#bfe8ff">freezes you</b>: 0.5s / 1s / 1s \u00b7 <kbd>Space</kbd> start \u00b7 <kbd>R</kbd> restart \u00b7 <kbd>Esc</kbd> home</p>', true);
+    'A wrong key <b style="color:#bfe8ff">freezes you</b>: 0.5s / 1s / 1s \u00b7 <kbd>Space</kbd> start \u00b7 <kbd>R</kbd> restart \u00b7 <kbd>Esc</kbd> home<br>' +
+    'New here? <a href="#" id="tut" style="color:var(--acc)">run the tutorial</a></p>', true);
   $('go').onclick = () => startRun();
+  $('tut').onclick = e => { e.preventDefault(); TUT.start(); };
   $('mp').onclick = () => MP.menu();
   $('duel').onclick = () => MP.duel(1);
   $('duel2').onclick = () => MP.duel(2);
@@ -1520,6 +1527,165 @@ const MP = {
 };
 
 /* ---------- input ---------- */
+/* ---------- tutorial ---------- */
+// a minute's walk through the game for somebody who has never seen it. it drives the
+// real field, the real keys and the real reveal, so what you learn is the game itself;
+// only the board and the opponent are invented. it records nothing.
+const TUT = {
+  wait: -1, lit: 0, solo: 0, was: 30, ready: false, BOT: 'TILEBOT',
+  start() { TUTOR = true; this.lit = 0; this.solo = 0; this.ready = false; this.was = DURATION; this.intro(); },
+  stop() {
+    TUTOR = false; this.wait = -1; running = false; onRoundEnd = null;
+    ls.set('codeTilesTut', '1');
+    if (DURATION !== this.was) setMode(this.was);
+    if (PRACTICE) return practiceMenu();
+    home();
+  },
+  step(n) { return '<p class="tag">tutorial · ' + n + ' of 5</p>'; },
+  card(top, body, btn, fn) {
+    show(top + body + '<div class="row"><button class="primary" id="tnext">' + btn + '</button></div>' +
+      '<div class="keyhint"><kbd>Enter</kbd> continue · <kbd>Esc</kbd> skip the tutorial</div>', true);
+    $('tnext').onclick = fn;
+  },
+  intro() {
+    this.card('<p class="tag">about a minute</p><h1>Quick tutorial</h1>',
+      '<p>Three keys, one run, then a 1v1 against a bot. None of it counts towards your scores.</p>',
+      'Start', () => this.keys());
+  },
+
+  // ---- 1 of 5: the keys. no clock and no tiles, just the three of them ----
+  keys() { this.lit = 0; this.wait = 0; this.paintKeys(); },
+  paintKeys() {
+    const chips = BINDS.map((k, i) => '<div class="tkey' + (i < this.lit ? ' done' : i === this.lit && this.wait >= 0 ? ' now' : '') +
+      '" style="--c:' + COL[i] + '"><b>' + esc(GLYPH[i]) + '</b><kbd>' + esc(keyLabel(k).toUpperCase()) + '</kbd></div>').join('');
+    const nxt = esc(keyLabel(BINDS[Math.min(2, this.lit)]).toUpperCase());
+    show(this.step(1) + '<h2>Three lanes, three keys</h2>' +
+      '<div class="tkeys">' + chips + '</div>' +
+      '<p>' + (this.lit < 3 ? 'Press <kbd>' + nxt + '</kbd>' : 'All three. They are yours — rebind them any time from the home screen.') + '</p>' +
+      '<div class="keyhint"><kbd>Esc</kbd> skip the tutorial</div>', true);
+  },
+  onKey(i) {
+    if (i !== this.lit) return beep(110, .14, 'sawtooth', .05);
+    sfxHit(i); this.lit++;
+    if (this.lit < 3) return this.paintKeys();
+    this.wait = -1; this.paintKeys();
+    setTimeout(() => { if (TUTOR) this.card(this.step(2) + '<h2>Now a run</h2>',
+      '<p>Tiles stack up the screen. Press the key for the <b>lowest</b> one, every time. A wrong key <b style="color:#bfe8ff">freezes you</b> for half a second, so accuracy beats hammering.</p>' +
+      '<p>Ten seconds, starting on your first key. Hit as many as you can.</p>',
+      'Go', () => this.go()); }, 800);
+  },
+
+  // ---- 2 of 5: the real thing, ten seconds ----
+  go() { setMode(10); startRun({ onEnd: s => { this.solo = s; this.board(); } }); },
+
+  // ---- 3 of 5: where a score lands ----
+  board() {
+    const rows = [['BRACKETBOB', 38], ['NOVAK', 31], ['MILO', 24], ['SPARK', 17], ['PENNY', 11], ['DAN', 5]]
+      .concat([[me ? me.username : 'YOU', this.solo, 1]])
+      .sort((a, b) => b[1] - a[1] || (a[2] ? 1 : -1))
+      .map(r => '<li' + (r[2] ? ' class="me"' : '') + '><span>' + esc(r[0]) + '</span><b>' + r[1] + '</b></li>').join('');
+    this.card(this.step(3) + '<h2>' + this.solo + ' tile' + (this.solo === 1 ? '' : 's') + '</h2>',
+      '<p>Every run goes on the board for its mode. This board is invented — the real one has today, this week and all time, for 10s, 20s and 30s separately.</p>' +
+      '<div id="lb"><button class="lbt">example board <span>10s mode</span></button><div id="lbbody"><ol>' + rows + '</ol></div></div>',
+      'Next', () => this.badges());
+  },
+
+  // ---- 4 of 5: what you are playing for ----
+  badges() {
+    const chips = ['45 ' + MODE_ICON[10], '110 ' + MODE_ICON[20], '100 games 🎮', '1v1 winner 10x', '👑 Triple crown']
+      .map(l => '<span class="bn">' + l + '</span>').join('');
+    this.card(this.step(4) + '<h2>Badges</h2>',
+      '<p>Scores and wins earn badges, and they sit on the box with your name on it — the one your opponent sees in a lobby. Some examples:</p>' +
+      '<div class="slot filled" style="max-width:320px;margin:0 auto 10px"><div class="nm"><span>' + esc(me ? me.username : 'YOU') + '</span></div>' +
+      '<div class="bns">' + chips + '</div></div>' +
+      '<p>Top the board for a mode and you wear the world #1 banner until somebody takes it off you.</p>',
+      'Try a 1v1', () => this.find());
+  },
+
+  // ---- 5 of 5: a scripted single round ----
+  myCard(ready) {
+    return playerCardHTML(me ? me.username : 'YOU', pickSkin(myStats, myBanner, myWorld),
+      visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, ready);
+  },
+  sides(veil, meReady, botReady) {
+    const them = veil
+      ? '<div class="slot filled veiled"><div class="nm"><span>?</span></div>' +
+        '<div class="bns"><span class="bn">revealed when you are both ready</span></div></div>'
+      : '<div class="revealin">' + playerCardHTML(this.BOT, null, [{ label: 'tutorial bot 🤖' }], false, botReady) + '</div>';
+    return '<div class="duel"><div class="dside">' + this.myCard(meReady) + '</div>' +
+      '<div class="vs">VS</div><div class="dside">' + them + '</div></div>';
+  },
+  find() {
+    show(this.step(5) + '<h1>1v1</h1><p class="tag">tutorial · one round · 20s</p>' +
+      '<div class="duel"><div class="dside">' + this.myCard(null) + '</div><div class="vs">VS</div>' +
+      '<div class="dside"><div class="slot empty searching">searching…</div></div></div>' +
+      '<div class="waiting">out there this is whoever else is queuing for 1v1</div>', true);
+    setTimeout(() => { if (TUTOR) this.found(); }, 1700);
+  },
+  found() { this.ready = false; sfxFound(); this.paintDuel(); },
+  paintDuel() {
+    show(this.step(5) + '<div class="foundbar"><b>OPPONENT FOUND</b><span>' +
+      (this.ready ? 'waiting for your opponent…' : 'ready up to play') + '</span></div>' +
+      '<p class="tag">tutorial · one round · 20s</p>' + this.sides(true, this.ready, false) +
+      '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="tnext">' +
+      (this.ready ? '✓ Ready' : 'Ready up') + '</button></div>' +
+      '<p>Neither of you can see the other until you have both readied up.</p>' +
+      '<div class="keyhint"><kbd>R</kbd> ready up</div>', true);
+    $('tnext').onclick = () => this.setReady();
+  },
+  setReady() {
+    if (this.ready) return;
+    this.ready = true; this.paintDuel();
+    setTimeout(() => { if (TUTOR) this.reveal(); }, 950);
+  },
+  reveal() {
+    show(this.step(5) + '<div class="foundbar"><b>OPPONENT FOUND</b><span>starting…</span></div>' +
+      '<p class="tag">tutorial · one round · 20s</p>' + this.sides(false, true, true), true);
+    setTimeout(() => { if (TUTOR) this.count(); }, 1500);
+  },
+  count() {
+    setMode(20);
+    let n = 3;
+    const tick = () => {
+      if (!TUTOR) return;
+      if (n > 0) {
+        show('<div id="count">' + n + '</div><p>Tutorial round · 20s</p>');
+        beep(440 + (3 - n) * 60, .12, 'triangle', .09); n--; return setTimeout(tick, 1000);
+      }
+      beep(880, .25, 'triangle', .12);
+      startRun({ autoStart: true, onEnd: s => this.result(s) });
+    };
+    tick();
+  },
+  // the bot lands a few behind: losing your first duel to a tutorial teaches nothing.
+  // at nought there is nowhere lower to put it, so that one is honestly a draw.
+  result(s) {
+    const bot = Math.max(0, s - (2 + Math.floor(Math.random() * 3)));
+    const drew = s === bot;
+    const panel = (cls, name, n, d, win) =>
+      '<div class="rteam ' + cls + (drew ? '' : win ? ' wins' : ' lose') + '" style="--vd:1.55s;--md:' + d + 's">' +
+      '<h3 style="--d:.05s">' + esc(name) + '</h3><div class="rmerge" style="--d:' + d + 's">' +
+      '<div class="ravg">' + n + '</div><div class="rlab">tiles</div></div></div>';
+    show('<h2 class="rhead">Tutorial round</h2>' +
+      '<div class="reveal">' + panel('ra', me ? me.username : 'YOU', s, .15, true) +
+      '<div class="rvs">VS</div>' + panel('rb', this.BOT, bot, .85, false) + '</div>' +
+      '<div class="verdict ' + (drew ? 'tie' : 'good') + '" style="--vd:1.55s">' +
+      (drew ? 'Round tied' : 'You take it') + '</div>' +
+      '<div class="matchend ' + (drew ? 'tie' : 'good') + '" style="--vd:1.55s">' +
+      (drew ? 'Nothing in it' : 'You win!') + '</div>' +
+      '<div class="revealctl late" style="--vd:1.55s">' +
+      '<p>A real 1v1 is best of three. Each side readies up between rounds, and a 20 second clock readies you anyway if you sit on it.</p>' +
+      '<div class="row"><button class="primary" id="tnext">Finish</button></div></div>', true);
+    $('tnext').onclick = () => this.done();
+  },
+  done() {
+    this.card('<h1>That is the game</h1>',
+      '<p><b>1v1</b> and <b>2v2</b> match you with whoever is queuing. <b>Join / create a lobby</b> is for playing someone you know.</p>' +
+      '<p>None of the tutorial was recorded, so your board is still empty. Go and fill it.</p>',
+      'Play', () => this.stop());
+  }
+};
+
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
@@ -1536,11 +1702,20 @@ addEventListener('keydown', e => {
     // not mid-round: walking out there leaves the others waiting on a score
     // that never arrives. between rounds and on the result screens it is fine.
     if (MP.phase === 'countdown' || MP.phase === 'playing') return;
+    if (TUTOR) return TUT.stop();
     home(); return;
+  }
+  // the tutorial asks for one key at a time, and ignores the other two until it has it
+  if (TUT.wait >= 0) {
+    const t = KEY[e.key.toLowerCase()];
+    if (t !== undefined) { e.preventDefault(); TUT.onKey(t); }
+    return;
   }
   // r restarts a solo run, and stands in for the ready button inside a match, where
   // restarting is not on offer. skipped entirely if r has been bound to a lane.
   if (e.key.toLowerCase() === 'r' && KEY['r'] === undefined) {
+    // inside the tutorial r is the card's own button, which is how it teaches ready-up
+    if (TUTOR) { e.preventDefault(); const t = $('tnext'); if (t) t.click(); return; }
     if (MP.phase === 'none') { e.preventDefault(); startRun(); return; }
     if (MP.phase === 'lobby' || MP.phase === 'between' || MP.phase === 'done') {
       e.preventDefault(); MP.setReady(!MP.ready); return;
@@ -1548,7 +1723,7 @@ addEventListener('keydown', e => {
   }
   const l = KEY[e.key.toLowerCase()];
   if (l !== undefined) { e.preventDefault(); press(l); return; }
-  if (!running && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); const g = $('go'); if (g) g.click(); }
+  if (!running && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); const g = $('tnext') || $('go'); if (g) g.click(); }
 });
 field.addEventListener('pointerdown', e => {
   field.focus(); if (!running) return;
@@ -1656,7 +1831,9 @@ function practiceMenu() {
         '<button class="ghost fmtbtn' + (df === d[0] ? ' on' : '') + '" data-p="df" data-v="' + d[0] + '">' + d[1] + '</button>').join('') +
       '</div><div class="empty">about ' + Math.round(BOT_RATE[df] * md) + ' tiles over ' + md + 's</div></div>' +
       '<div class="row"><button class="primary" id="pgo">Start practice</button></div>' +
+      '<div class="row"><button class="ghost" id="ptut">\uD83C\uDF93 Run the tutorial</button></div>' +
       '<div class="row"><button class="ghost" id="pexit">Back to the game</button></div>', true);
+    $('ptut').onclick = () => TUT.start();
     document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
       const v = b.dataset.v;
       if (b.dataset.p === 'sz') sz = +v; else if (b.dataset.p === 'md') md = +v; else df = v;
