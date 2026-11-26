@@ -6,7 +6,10 @@ const EMAIL_DOMAIN = 'codetiles.local';
 const $ = id => document.getElementById(id);
 const cv = $('c'), ctx = cv.getContext('2d'), field = $('field'), msg = $('msg');
 const LANES = 3, COL = ['#5cc8ff', '#c084fc', '#ffa657'];
-const FREEZE_BY_MODE = { 10: .5, 20: 1, 30: 1.5 }, TILE_H = 100, SLIDE_SPEED = 1000;
+// a miss costs miss-rate x penalty, and the miss rate per second barely moves between
+// modes, so the penalty alone sets the share of a round lost. 1.5s put 30s at 21.7%
+// frozen against 13.5% for 20s; capping it at 1s brings the three into line.
+const FREEZE_BY_MODE = { 10: .5, 20: 1, 30: 1 }, TILE_H = 100, SLIDE_SPEED = 1000;
 const LOG_MIN = { 10: 1, 20: 1, 30: 1 };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
@@ -781,7 +784,7 @@ function home() {
       (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
     KEYS_HTML() + LB_HTML() +
     '<p>Signed in as <b>' + esc(me ? me.username : '') + '</b> \u00b7 <a href="#" id="out" style="color:var(--dim)">sign out</a><br>' +
-    'A wrong key <b style="color:#bfe8ff">freezes you</b>: 0.5s / 1s / 1.5s \u00b7 <kbd>Space</kbd> start \u00b7 <kbd>R</kbd> restart \u00b7 <kbd>Esc</kbd> home</p>', true);
+    'A wrong key <b style="color:#bfe8ff">freezes you</b>: 0.5s / 1s / 1s \u00b7 <kbd>Space</kbd> start \u00b7 <kbd>R</kbd> restart \u00b7 <kbd>Esc</kbd> home</p>', true);
   $('go').onclick = () => startRun();
   $('mp').onclick = () => MP.menu();
   $('duel').onclick = () => MP.duel(1);
