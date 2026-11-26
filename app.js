@@ -916,6 +916,8 @@ function soloResult(pb, logging) {
 
 /* ================= MULTIPLAYER ================= */
 // one player's box: banner behind it, badges inside it
+// long enough to read an opponent's card before the countdown takes over
+const REVEAL_MS = 1900;
 const MASCOT = { 10: '\uD83C\uDFCE\uFE0F', 20: '\uD83D\uDC07', 30: '\uD83D\uDC22' };
 // share of the cycle each one spends crossing: the car is quick, the turtle is not
 const TRAVEL = { 10: .10, 20: .19, 30: .33 };
@@ -1009,7 +1011,14 @@ const MP = {
     const left = (inLobby && us.length ? us.map(card).join('')
       : playerCardHTML(me.username, pickSkin(myStats, myBanner, myWorld), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null)) +
       this.emptySlots(n - Math.max(1, us.length), state, 'teammate');
-    const right = them.map(card).join('') + this.emptySlots(n - them.length, state, 'opponent');
+    // only the other side is hidden: a teammate you cannot see is no comfort, and the
+    // point is to stop someone conceding to a banner rather than to a player
+    const veil = this.cfg.quick && !this.revealed;
+    const right = (veil
+      ? them.map(() => '<div class="slot filled veiled"><div class="nm"><span>?</span></div>' +
+          '<div class="bns"><span class="bn">revealed when you are both ready</span></div></div>').join('')
+      : them.map(p => '<div class="revealin">' + card(p) + '</div>').join('')) +
+      this.emptySlots(n - them.length, state, 'opponent');
     return '<div class="duel"><div class="dside">' + left + '</div><div class="vs">VS</div><div class="dside">' + right + '</div></div>';
   },
   emptySlots(k, state, who) {
@@ -1104,7 +1113,7 @@ const MP = {
     const c = client(); if (!c) return;
     this.leave();
     this.code = code; this.host = isHost; this.joinedAt = Date.now(); this.phase = 'lobby'; this.ready = false; this.chat = []; this.advancing = false; this.bannerKey = '';
-    this.wins = { A: 0, B: 0 }; this.history = []; this.round = 0;
+    this.wins = { A: 0, B: 0 }; this.history = []; this.round = 0; this.revealed = false;
     this.ch = c.channel('lobby-' + code, { config: { presence: { key: me.id }, broadcast: { self: true } } });
     this.ch
       .on('presence', { event: 'sync' }, () => this.syncRoster())
@@ -1113,6 +1122,7 @@ const MP = {
       .on('broadcast', { event: 'start' }, ({ payload }) => this.onStart(payload))
       .on('broadcast', { event: 'score' }, ({ payload }) => this.onScore(payload))
       .on('broadcast', { event: 'result' }, ({ payload }) => this.onResult(payload))
+      .on('broadcast', { event: 'reveal' }, () => { this.revealed = true; this.renderDuel('found'); })
       .on('broadcast', { event: 'home' }, () => { this.phase = 'lobby'; this.ready = false; this.track(); this.lobby(); })
       .subscribe(async status => {
         if (status === 'SUBSCRIBED') { await this.track(); this.lobby(); }
@@ -1145,9 +1155,13 @@ const MP = {
     if (this.host && this.phase === 'between' && !this.advancing && this.allReady()) {
       this.advancing = true; this.round++; this.nextRound();
     }
-    // a quick match has no lobby to sit in: start as soon as the pair is complete
+    // a quick match has no lobby to sit in. both sides ready up blind, then the
+    // opponent is uncovered and the match starts a beat later, so nobody can size
+    // up a world #1 and quit before a ball is bowled.
     if (this.cfg.quick && this.host && this.phase === 'lobby' && !this.advancing && this.allReady()) {
-      this.advancing = true; this.startMatch();
+      this.advancing = true;
+      this.ch.send({ type: 'broadcast', event: 'reveal', payload: {} });
+      setTimeout(() => { if (this.phase === 'lobby') this.startMatch(); }, REVEAL_MS);
     }
   },
   teamOf(i) { return i % 2 === 0 ? 'A' : 'B'; },
