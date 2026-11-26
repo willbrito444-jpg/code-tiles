@@ -964,7 +964,7 @@ const MP = {
 
   get active() { return this.phase === 'countdown' || this.phase === 'playing'; },
   leave() {
-    this.qmStop();
+    this.qmStop(); this.clearAuto();
     if (this.ch) { try { this.ch.unsubscribe(); } catch (e) {} this.ch = null; }
     this.phase = 'none'; this.code = ''; this.host = false; this.roster = []; this.chat = []; this.ready = false; this.advancing = false; this.bannerKey = '';
     clearTimeout(this._trackT); this._trackAt = 0;
@@ -1149,6 +1149,27 @@ const MP = {
     this._trackT = setTimeout(() => { if (!this.ch) return; this._trackAt = Date.now(); this.ch.track(this._payload()); }, 250 - gap);
   },
   setReady(v) { this.ready = v; this.track(); this.repaint(); },
+  // a player who is losing could simply never ready and wait the other one out.
+  // every client runs this clock itself, so it needs no host and no agreement.
+  AUTO_READY: 20,
+  startAutoReady() {
+    this.clearAuto();
+    this._autoLeft = this.AUTO_READY;
+    const tick = () => {
+      if (this.phase !== 'between') return this.clearAuto();
+      const el = $('autordy');
+      if (this.ready) { if (el) el.textContent = ''; return this.clearAuto(); }
+      if (this._autoLeft <= 0) { this.clearAuto(); return this.setReady(true); }
+      if (el) {
+        el.textContent = 'auto ready in ' + this._autoLeft + 's';
+        el.classList.toggle('soon', this._autoLeft <= 5);
+      }
+      this._autoLeft--;
+    };
+    tick();
+    this._autoT = setInterval(tick, 1000);
+  },
+  clearAuto() { clearInterval(this._autoT); this._autoT = null; },
 
   syncRoster() {
     if (!this.ch) return;
@@ -1304,6 +1325,7 @@ const MP = {
   },
   onStart(p) {
     this.advancing = false;
+    this.clearAuto();
     this.phase = 'countdown'; this.round = p.round; this.wins = p.wins || { A: 0, B: 0 }; this.history = p.history || [];
     this.roundScores = {}; this.ready = false; this.track();
     setMode(p.mode); this.bar(); audioOn();
@@ -1395,11 +1417,14 @@ const MP = {
           '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Rematch' : 'Rematch') + '</button>' +
             (this.host && !this.cfg.quick ? '<button class="ghost" id="again">Back to lobby</button>' : '') +
             '<button class="ghost" id="bk">Leave</button></div>' +
-          '<div class="waiting">' + (this.need() > 2 ? 'all four' : 'both players') + ' have to want one \u00b7 <kbd>R</kbd></div>'
+          '<div class="waiting">' + (this.need() > 2 ? 'all four' : 'both players') + ' have to want one</div>' +
+          '<div class="keyhint"><kbd>R</kbd> rematch</div>'
         : series +
           '<div class="row" id="rdyrow">' + readyList + '</div>' +
           '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready for next round') + '</button></div>' +
-          '<div class="waiting">next round starts when everyone is ready \u00b7 <kbd>R</kbd></div>';
+          '<div class="waiting">next round starts when everyone is ready</div>' +
+          '<div class="autordy" id="autordy"></div>' +
+          '<div class="keyhint"><kbd>R</kbd> ready up</div>';
       // your team on the left, so the reveal reads left to right in the order it plays
       show('<h2 class="rhead">Round ' + (this.round + 1) + (p.done ? ' \u00b7 final' : '') + '</h2>' +
         '<div class="cols"><div class="colmain">' +
@@ -1411,6 +1436,7 @@ const MP = {
         '<div class="revealctl' + (p.done ? ' late' : '') + '" style="--vd:' + vd + 's">' + ctl +
         '</div></div><div class="colside">' + this.CHAT_HTML() + '</div></div>', true);
       $('rdy').onclick = () => this.setReady(!this.ready);
+      if (!p.done) this.startAutoReady();
       if (p.done) {
         const ag = $('again');
         if (ag) ag.onclick = () => { this.ch.send({ type: 'broadcast', event: 'home', payload: {} }); };
@@ -1437,7 +1463,13 @@ addEventListener('keydown', e => {
     const other = BINDS.indexOf(k); if (other >= 0 && other !== listening) BINDS[other] = BINDS[listening];
     BINDS[listening] = k; saveBinds(); return;
   }
-  if (e.key === 'Escape') { e.preventDefault(); home(); return; }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    // not mid-round: walking out there leaves the others waiting on a score
+    // that never arrives. between rounds and on the result screens it is fine.
+    if (MP.phase === 'countdown' || MP.phase === 'playing') return;
+    home(); return;
+  }
   // r restarts a solo run, and stands in for the ready button inside a match, where
   // restarting is not on offer. skipped entirely if r has been bound to a lane.
   if (e.key.toLowerCase() === 'r' && KEY['r'] === undefined) {
