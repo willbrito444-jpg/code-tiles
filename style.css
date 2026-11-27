@@ -455,15 +455,35 @@ ol.bb li.me .rk { color:var(--acc); }
 /* once you are ready it stops asking and just confirms */
 .readybtn.on { background:linear-gradient(180deg,var(--good),#2fa35c); color:#06111a;
   border-color:var(--good); animation:none; transform:none; box-shadow:0 0 16px rgba(74,222,128,.35); }
-/* tutorial step one: the prompt sits above the real board, so the board stays visible */
-#mpbar.tutbar { font-size:15px; font-weight:800; color:var(--fg); padding:7px 0;
-  align-items:center; justify-content:center; gap:11px; }
-#mpbar.tutbar kbd { font-size:15px; padding:4px 10px; }
-#mpbar.tutbar em { font-style:normal; font-size:11px; font-weight:500; color:var(--dim); }
-#mpbar.tutbar .tdots { display:inline-flex; gap:5px; }
-#mpbar.tutbar .tdots i { width:7px; height:7px; border-radius:50%; background:#2a3542; }
-#mpbar.tutbar .tdots i.on { background:var(--good); }
-@media (max-width: 620px) { #mpbar.tutbar { font-size:13px; gap:7px; } #mpbar.tutbar em { display:none; } }
+/* tutorial: a few big words over the board, in the empty space above the tiles */
+#msg.say { background:transparent; backdrop-filter:none; justify-content:flex-start;
+  padding-top:6%; pointer-events:none; gap:9px; }
+.bigsay { font-size:44px; font-weight:800; color:#fff; letter-spacing:-1.5px; line-height:1.1;
+  text-shadow:0 3px 24px rgba(10,13,18,.95); }
+.bigsay kbd { font-size:38px; font-weight:800; padding:2px 16px; border-radius:10px;
+  background:#fff; color:#0a0d12; border-color:#fff;
+  animation:saykey .95s ease-in-out infinite; }
+@keyframes saykey {
+  0%,100% { box-shadow:0 0 0 0 rgba(255,255,255,.6); }
+  50%     { box-shadow:0 0 0 13px rgba(255,255,255,0); }
+}
+.bigsay .ice { color:#bfe8ff; }
+.subsay { font-size:14px; color:var(--dim); max-width:340px; }
+/* the key you are being asked for, on the pad under the board */
+#pad button.hot { border-color:#fff; color:#fff; background:rgba(255,255,255,.12);
+  animation:saykey .95s ease-in-out infinite; }
+/* the clock matters, so during the tutorial's runs it is impossible to miss */
+#hud.tut #timer { font-size:46px; text-shadow:0 0 22px rgba(255,255,255,.45); }
+/* the example board, big enough to read at a glance */
+.tlb { width:100%; max-width:340px; display:flex; flex-direction:column; gap:3px; margin:2px 0; }
+.tlbr { display:flex; align-items:center; gap:10px; padding:7px 12px; border-radius:9px;
+  background:#0d131b; border:1px solid var(--line); font-size:15px; font-weight:800; }
+.tlbr .rk { width:20px; color:var(--dim); font-size:12px; }
+.tlbr .nm { flex:1; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tlbr b { font-size:19px; font-weight:900; font-variant-numeric:tabular-nums; }
+.tlbr.me { border-color:var(--acc); background:rgba(92,200,255,.13); color:var(--acc); }
+@media (max-width: 620px) { .bigsay { font-size:30px; } .bigsay kbd { font-size:26px; padding:2px 11px; } }
+@media (prefers-reduced-motion: reduce) { .bigsay kbd, #pad button.hot { animation:none; } }
 /* the opponent, before both sides have readied up */
 /* the moment somebody turns up: it used to look exactly like the idle screen */
 .foundbar { display:flex; flex-direction:column; align-items:center; gap:3px; margin-bottom:4px;
