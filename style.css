@@ -572,6 +572,7 @@ ol.bb li.me .rk { color:var(--acc); }
 .mate.ok { border-color:rgba(74,222,128,.45); background:rgba(74,222,128,.06); }
 .mate.ok b { color:var(--good); }
 .mate.none { color:var(--dim); font-size:11px; justify-content:center; }
+.mate button.off { opacity:.45; cursor:default; }
 /* a name you can open */
 .pname { cursor:pointer; }
 .friends .n.pname:hover { color:var(--acc); text-decoration:underline; }
