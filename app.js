@@ -393,6 +393,16 @@ function show(html, top) { msg.innerHTML = html; msg.className = top ? 'top' : '
 
 /* ---------- friends ---------- */
 let friends = [], online = new Set(), reqs = [];
+// the preview exists so the duel screens can be driven by one person. these three
+// stand in for a friends list: they accept instantly and play as bots afterwards.
+const PREVIEW = /[?&]preview\b/.test(location.search);
+const DEMO_FRIENDS = [{ id: 'demo-ava', username: 'AVA' }, { id: 'demo-rook', username: 'ROOK' }, { id: 'demo-pixel', username: 'PIXEL' }];
+const DEMO_BADGE = [{ id: 'demo', rar: 'common', label: 'stand-in \uD83E\uDD16' }];
+function seedDemoFriends() {
+  if (!PREVIEW) return;
+  friends = DEMO_FRIENDS.slice();
+  DEMO_FRIENDS.forEach(f => online.add(f.id));
+}
 const rpc = (fn, body) => fetch(SUPABASE.url + '/rest/v1/rpc/' + fn, { method: 'POST', headers: jhead(), body: JSON.stringify(body || {}) });
 async function loadFriends() {
   if (!me) return [];
@@ -1227,7 +1237,7 @@ const MP = {
       (state === 'found'
         ? sides + '<div class="cols"><div class="colmain">' + head + tail + '</div><div class="colside">' + this.CHAT_HTML() + '</div></div>'
         : head + sides + tail), true);
-    $('bk').onclick = () => { this.qmStop(); this.clearParty(); this.leave(); home(); };
+    $('bk').onclick = () => { this.qmStop(); this.clearParty(); this.leave(); PREVIEW ? practiceMenu() : home(); };
     document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => { this.duelMode = +b.dataset.dm; this.renderDuel('idle'); });
     const f = $('dfind'); if (f) f.onclick = () => this.search();
     document.querySelectorAll('[data-mate]').forEach(b => b.onclick = () => this.askMate(b.dataset.mate, b.dataset.mn));
@@ -1326,6 +1336,11 @@ const MP = {
           return (ch === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
         });
     this.mateAsked = { id: id, name: name };
+    if (PREVIEW && String(id).indexOf('demo-') === 0) {
+      this.mate = { id: id, name: name }; this.mateAsked = null;
+      this.mateCardId = id; this.mateCard = { skin: null, badges: DEMO_BADGE };
+      return this.renderDuel('idle');
+    }
     this.duoJoin(this.party, true);
     pingUser(id, 'teaminv', { party: this.party, pid: me.id });
     this.renderDuel('idle');
@@ -1338,9 +1353,19 @@ const MP = {
   async search() {
     const mode = this.duelMode, fn = this.qmFns();
     audioOn();  // a click, so the cue can actually sound when somebody turns up
+    this.qmOff = false;
+    if (PREVIEW) {
+      // no real queue here: a short search, then the same duel against bots, with
+      // whoever you invited sitting on your side of it
+      this.renderDuel('searching');
+      this._qmT = setTimeout(() => {
+        if (this.qmOff) return;
+        practiceStart(this.duelTeam || 2, mode, 'normal', this.mate, this.party);
+      }, 1500);
+      return;
+    }
     // whoever presses it takes both of you into the queue; the other half is told
     if (this.duoCh && this.mate) { try { this.duoCh.send({ type: 'broadcast', event: 'go', payload: { mode: mode } }); } catch (e) {} }
-    this.qmOff = false;
     this.renderDuel('searching');
     try {
       const two = (this.duelTeam || 1) > 1;
@@ -2085,18 +2110,24 @@ function practiceBots(p) {
     }, after + 300 + i * 140 + Math.random() * 800));
   });
 }
-function practiceStart(teamSize, mode, diff) {
+function practiceStart(teamSize, mode, diff, mate, party) {
   MP.leave(); practiceStop();
   PRACTICE = true;
-  // joinedAt 0 seats me first, so roster order (and therefore teams) is predictable:
-  // index 1 and 3 are opponents, index 2 is my partner
+  // joinedAt 0 seats me first, so the roster order is predictable. teams are worked
+  // out by MP.teams(), which pairs off units in roster order: me and the first bot on
+  // one side, the other two on the other. an invited teammate shares my party id, so
+  // they take that first seat and end up beside me.
   MP.code = 'PRACTICE'; MP.host = true; MP.joinedAt = 0; MP.phase = 'lobby';
   MP.ready = false; MP.chat = []; MP.advancing = false; MP.bannerKey = 'practice';
   MP.wins = { A: 0, B: 0 }; MP.history = []; MP.round = 0; MP.revealed = false;
   MP.duelTeam = teamSize;
   MP.cfg = { format: 'shootout', mode: mode, teamSize: teamSize, rounds: 3, quick: true };
   const bots = [];
-  for (let i = 1; i < teamSize * 2; i++) bots.push({ pid: 'bot-' + i, name: BOT_NAMES[i - 1], at: i, host: false, ready: true });
+  for (let i = 1; i < teamSize * 2; i++) {
+    const b = { pid: 'bot-' + i, name: BOT_NAMES[i - 1], at: i, host: false, ready: true };
+    if (mate && i === 1) { b.name = mate.name; b.party = party || null; }
+    bots.push(b);
+  }
   MP.practice = { diff: diff, bots: bots, timers: [] };
   const ch = localChannel();
   MP.ch = ch;
@@ -2112,7 +2143,7 @@ function practiceStart(teamSize, mode, diff) {
   MP.skins = {}; MP.banners = {};
   MP.skins[me.id] = pickSkin(myStats, myBanner, myWorld);
   MP.banners[me.id] = visibleBadges(earnedBanners(myStats, true), myShown, myWorld);
-  bots.forEach(b => { MP.skins[b.pid] = null; MP.banners[b.pid] = [{ id: 'bot', rar: 'common', label: '\uD83E\uDD16 bot' }]; });
+  bots.forEach(b => { MP.skins[b.pid] = null; MP.banners[b.pid] = b.party ? DEMO_BADGE : [{ id: 'bot', rar: 'common', label: '\uD83E\uDD16 bot' }]; });
   ch.subscribe(s => { if (s === 'SUBSCRIBED') { MP.track(); MP.renderDuel('found'); } });
 }
 function practiceMenu() {
@@ -2133,9 +2164,12 @@ function practiceMenu() {
         '<button class="ghost fmtbtn' + (df === d[0] ? ' on' : '') + '" data-p="df" data-v="' + d[0] + '">' + d[1] + '</button>').join('') +
       '</div><div class="empty">about ' + Math.round(BOT_RATE[df] * md) + ' tiles over ' + md + 's</div></div>' +
       '<div class="row"><button class="primary" id="pgo">Start practice</button></div>' +
+      '<div class="row"><button class="ghost" id="pteam">\uD83D\uDC65 2v2 with a teammate</button></div>' +
       '<div class="row"><button class="ghost" id="ptut">\uD83C\uDF93 Run the tutorial</button></div>' +
       '<div class="row"><button class="ghost" id="pexit">Back to the game</button></div>', true);
     $('ptut').onclick = () => TUT.start('practice');
+    // stand-in friends, then the real 2v2 screen: invite one and they accept at once
+    $('pteam').onclick = () => { seedDemoFriends(); MP.duel(2); };
     document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
       const v = b.dataset.v;
       if (b.dataset.p === 'sz') sz = +v; else if (b.dataset.p === 'md') md = +v; else df = v;
