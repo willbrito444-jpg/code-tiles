@@ -562,6 +562,16 @@ ol.bb li.me .rk { color:var(--acc); }
 .friends .freq:first-of-type { border-top:0; padding-top:0; }
 .friends .freq .slot { margin-bottom:6px; min-height:0; }
 .friends .freqbtns { display:flex; gap:6px; }
+/* picking a teammate before you queue for 2v2 */
+.mate { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:7px;
+  width:100%; max-width:420px; margin:2px auto 0; padding:8px 10px;
+  border:1px solid var(--line); border-radius:11px; background:#0d131b; }
+.mate .k { font-size:10px; font-weight:800; letter-spacing:1px; color:var(--dim); }
+.mate b { font-size:14px; font-weight:900; color:var(--fg); }
+.mate .note { font-size:10px; color:var(--dim); flex-basis:100%; text-align:center; }
+.mate.ok { border-color:rgba(74,222,128,.45); background:rgba(74,222,128,.06); }
+.mate.ok b { color:var(--good); }
+.mate.none { color:var(--dim); font-size:11px; justify-content:center; }
 /* a name you can open */
 .pname { cursor:pointer; }
 .friends .n.pname:hover { color:var(--acc); text-decoration:underline; }
