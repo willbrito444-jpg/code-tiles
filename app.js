@@ -753,12 +753,12 @@ async function findId(name) {
   try { const r = await rpc('find_player', { q: name }); const rows = r.ok ? await r.json() : []; return rows.length ? rows[0].id : null; }
   catch (e) { return null; }
 }
-function pingUser(uid, event) {
+function pingUser(uid, event, extra) {
   const c = client(); if (!c) return;
   const ch = c.channel('inv-' + uid);
   ch.subscribe(st => {
     if (st === 'SUBSCRIBED') {
-      ch.send({ type: 'broadcast', event, payload: { from: me.username } });
+      ch.send({ type: 'broadcast', event, payload: { from: me.username, ...(extra || {}) } });
       setTimeout(() => { try { ch.unsubscribe(); } catch (e) {} }, 1500);
     }
   });
@@ -822,6 +822,8 @@ function startPresence() {
     .on('broadcast', { event: 'invite' }, ({ payload }) => toastInvite(payload))
     .on('broadcast', { event: 'friendreq' }, ({ payload }) => toastMsg((payload && payload.from ? payload.from : 'Someone') + ' sent you a friend request'))
     .on('broadcast', { event: 'friendok' }, ({ payload }) => toastMsg((payload && payload.from ? payload.from : 'Someone') + ' accepted your friend request'))
+    .on('broadcast', { event: 'teaminv' }, ({ payload }) => toastTeam(payload))
+    .on('broadcast', { event: 'teamok' }, ({ payload }) => MP.onTeamOk(payload))
     .subscribe();
 }
 async function toastMsg(text) {
@@ -838,6 +840,25 @@ function toastEl() {
   let t = $('toast');
   if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
   return t;
+}
+// somebody wants you on their 2v2 team. accepting puts you both on the same screen,
+// each still has to press Find: the queue pairs you, it does not play for you.
+function toastTeam(p) {
+  if (!p || !p.party || !p.pid) return;
+  const t = toastEl(), d = document.createElement('div');
+  d.className = 't';
+  d.innerHTML = '<div><b>' + esc(p.from || 'someone') + '</b> wants you as their 2v2 teammate</div>' +
+    '<div class="row"><button class="small" data-y="1">Team up</button><button class="small" data-x="1">No thanks</button></div>';
+  t.appendChild(d);
+  beep(660, .1, 'triangle', .09); setTimeout(() => beep(990, .12, 'triangle', .09), 110);
+  d.querySelector('[data-y]').onclick = () => {
+    d.remove();
+    MP.party = p.party; MP.mate = { id: p.pid, name: p.from || 'teammate' }; MP.mateAsked = null;
+    pingUser(p.pid, 'teamok', { party: p.party, pid: me.id });
+    MP.duel(2);
+  };
+  d.querySelector('[data-x]').onclick = () => d.remove();
+  setTimeout(() => d.remove(), 30000);
 }
 function toastInvite(p) {
   if (!p || !p.code) return;
@@ -1137,6 +1158,7 @@ const MP = {
   duel(teamSize) {
     this.leave(); running = false; $('mpbar').style.display = 'none';
     this.duelTeam = teamSize || 1;
+    if (this.duelTeam < 2) this.clearParty();  // a 1v1 has nobody to bring
     if (!client()) { show('<h1>Offline</h1><p>Matchmaking needs the network.</p><button class="ghost" id="bk">Back</button>'); $('bk').onclick = home; return; }
     this.duelMode = this.duelMode || DURATION || 20;
     this.qmOff = true;
@@ -1183,7 +1205,7 @@ const MP = {
     else action = '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready up') + '</button></div>' +
       '<div class="keyhint"><kbd>R</kbd> ready up</div>';
     // the two boxes stay full width even with the chat alongside, so both banners read properly
-    const head = '<div class="row">' + modes + '</div>';
+    const head = '<div class="row">' + modes + '</div>' + (state === 'idle' ? this.teamRow() : '');
     const tail = (err ? '<div class="err">' + esc(err) + '</div>' : '') + action +
       '<button class="ghost" id="bk">' + (state === 'idle' ? 'Back' : 'Leave') + '</button>';
     const sides = this.duelSides(state);
@@ -1200,9 +1222,11 @@ const MP = {
       (state === 'found'
         ? sides + '<div class="cols"><div class="colmain">' + head + tail + '</div><div class="colside">' + this.CHAT_HTML() + '</div></div>'
         : head + sides + tail), true);
-    $('bk').onclick = () => { this.qmStop(); this.leave(); home(); };
+    $('bk').onclick = () => { this.qmStop(); this.clearParty(); this.leave(); home(); };
     document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => { this.duelMode = +b.dataset.dm; this.renderDuel('idle'); });
     const f = $('dfind'); if (f) f.onclick = () => this.search();
+    document.querySelectorAll('[data-mate]').forEach(b => b.onclick = () => this.askMate(b.dataset.mate, b.dataset.mn));
+    const mo = $('mateoff'); if (mo) mo.onclick = () => { this.clearParty(); this.renderDuel('idle'); };
     const c = $('dcan'); if (c) c.onclick = () => { this.qmStop(); this.renderDuel('idle'); };
     const r = $('rdy'); if (r) r.onclick = () => this.setReady(!this.ready);
     if (state === 'found') {
@@ -1217,6 +1241,44 @@ const MP = {
       : 'ready up to play';
   },
   // the 2v2 queue is a table of its own, so a 1v1 search never sees a 2v2 waiter
+  // picking a teammate before you queue. the pair is a uuid both of you carry; the
+  // matchmaker keeps you together and fills the other side with whoever is waiting.
+  party: null, mate: null, mateAsked: null,
+  clearParty() { this.party = null; this.mate = null; this.mateAsked = null; },
+  teamRow() {
+    if ((this.duelTeam || 1) < 2) return '';
+    if (this.mate) return '<div class="mate ok"><span class="k">TEAMMATE</span><b>' + esc(this.mate.name) +
+      '</b><button class="small" id="mateoff">remove</button>' +
+      '<span class="note">you both need to press Find</span></div>';
+    if (this.mateAsked) return '<div class="mate"><span class="k">TEAMMATE</span><b>' + esc(this.mateAsked.name) +
+      '</b><span class="note">invited \u2014 waiting for them\u2026</span>' +
+      '<button class="small" id="mateoff">cancel</button></div>';
+    const on = friends.filter(f => online.has(f.id));
+    if (!on.length) return '<div class="mate none">' +
+      (friends.length ? 'no friends online right now' : 'add friends to pick a teammate') +
+      ' \u00b7 you will be given a random one</div>';
+    return '<div class="mate"><span class="k">BRING A TEAMMATE</span>' + on.slice(0, 4).map(f =>
+      '<button class="small" data-mate="' + f.id + '" data-mn="' + esc(f.username) + '">' + esc(f.username) + '</button>').join('') +
+      '<span class="note">or leave it and get a random one</span></div>';
+  },
+  askMate(id, name) {
+    // the column is a uuid, so the fallback has to be uuid-shaped, not merely unique
+    this.party = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, ch => {
+          const r = Math.random() * 16 | 0;
+          return (ch === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    this.mateAsked = { id: id, name: name };
+    pingUser(id, 'teaminv', { party: this.party, pid: me.id });
+    this.renderDuel('idle');
+  },
+  // they said yes: both sides now hold the same party id
+  onTeamOk(p) {
+    if (!p || p.party !== this.party) return;
+    this.mateAsked = null; this.mate = { id: p.pid, name: p.from || 'teammate' };
+    toastMsg((p.from || 'They') + ' is your teammate');
+    if ($('dfind')) this.renderDuel('idle');
+  },
   qmFns() {
     return (this.duelTeam || 1) > 1
       ? { match: 'quick_match2', poll: 'quick_poll2', cancel: 'quick_cancel2' }
@@ -1228,7 +1290,8 @@ const MP = {
     this.qmOff = false;
     this.renderDuel('searching');
     try {
-      const res = await rpc(fn.match, { p_mode: mode });
+      const two = (this.duelTeam || 1) > 1;
+      const res = await rpc(fn.match, two ? { p_mode: mode, p_party: this.party || null } : { p_mode: mode });
       if (this.qmOff) return;
       const rows = res.ok ? await res.json() : [];
       const row = rows[0] || {};
@@ -1304,7 +1367,7 @@ const MP = {
         }
       });
   },
-  _payload() { return { pid: me.id, name: me.username, at: this.joinedAt, host: this.host, ready: this.ready }; },
+  _payload() { return { pid: me.id, name: me.username, at: this.joinedAt, host: this.host, ready: this.ready, party: this.party || null }; },
   track() {
     if (!this.ch) return;
     const now = Date.now(), gap = now - (this._trackAt || 0);
@@ -1342,7 +1405,7 @@ const MP = {
     list.sort((a, b) => a.at - b.at || (a.pid < b.pid ? -1 : 1));
     this.roster = list;
     const i = list.findIndex(p => p.pid === me.id);
-    this.myTeam = i < 0 ? 'A' : (i % 2 === 0 ? 'A' : 'B');
+    this.myTeam = i < 0 ? 'A' : this.teamOf(i);
     this.repaint();
     this.loadRosterBanners();
     // this.ready is checked as well as the roster: onResult clears it locally but the
@@ -1364,7 +1427,28 @@ const MP = {
       setTimeout(() => { if (this.phase === 'lobby') this.startMatch(); }, REVEAL_MS);
     }
   },
-  teamOf(i) { return i % 2 === 0 ? 'A' : 'B'; },
+  // a pair is one unit and goes on one side. every client runs this over the same
+  // roster in the same order, so the answer matches everywhere without a broadcast.
+  teams() {
+    const seen = {}, units = [], out = {};
+    this.roster.forEach(p => {
+      const k = p.party || ('s' + p.pid);
+      if (seen[k] === undefined) { seen[k] = units.length; units.push([]); }
+      units[seen[k]].push(p.pid);
+    });
+    const cap = { A: this.duelTeam || 1, B: this.duelTeam || 1 };
+    units.forEach(u => {
+      const side = cap.A >= u.length ? 'A' : 'B';
+      u.forEach(pid => { out[pid] = side; cap[side]--; });
+    });
+    return out;
+  },
+  teamOf(i) {
+    const p = this.roster[i];
+    const fallback = i % 2 === 0 ? 'A' : 'B';
+    if (!p) return fallback;
+    return this.teams()[p.pid] || fallback;
+  },
   teamMembers(t) { return this.roster.filter((p, i) => this.teamOf(i) === t); },
   need() { return this.cfg.teamSize * 2; },
   // my own seat answers from the click that just happened, not from my presence write,
