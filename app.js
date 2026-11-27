@@ -1530,51 +1530,47 @@ const MP = {
 /* ---------- input ---------- */
 /* ---------- tutorial ---------- */
 // a minute's walk through the game for somebody who has never seen it. it drives the
-// real field, the real keys and the real reveal, so what you learn is the game itself;
-// only the board and the opponent are invented. it records nothing.
+// real field, the real keys, the real freeze and the real reveal, so what you learn is
+// the game itself; only the board and the opponent are invented. it records nothing.
 const TUT = {
   wait: -1, lit: 0, solo: 0, was: 30, ready: false, back: '', BOT: 'TILEBOT',
   start(back) { TUTOR = true; this.back = back || ''; this.lit = 0; this.solo = 0; this.ready = false; this.was = DURATION; this.intro(); },
   stop() {
-    TUTOR = false; this.wait = -1; running = false; onRoundEnd = null; this.clearBar();
+    TUTOR = false; this.wait = -1; running = false; onRoundEnd = null;
+    this.hot(-1); $('hud').classList.remove('tut');
     ls.set('codeTilesTut', '1');
     if (DURATION !== this.was) setMode(this.was);
     // back where it was launched from: the practice menu is not the home screen
     if (this.back === 'practice' || PRACTICE) return practiceMenu();
     home();
   },
-  step(n) { return '<p class="tag">tutorial · ' + n + ' of 5</p>'; },
-  clearBar() { const b = $('mpbar'); b.className = ''; b.style.display = 'none'; b.innerHTML = ''; },
   card(top, body, btn, fn) {
-    this.clearBar();
-    show(top + body + '<div class="row"><button class="primary" id="tnext">' + btn + '</button></div>' +
-      '<div class="keyhint"><kbd>Enter</kbd> continue · <kbd>Esc</kbd> skip the tutorial</div>', true);
+    show(top + body + '<div class="row"><button class="primary" id="tnext">' + btn + '</button></div>', true);
     $('tnext').onclick = fn;
   },
+  // big words over the board itself: the overlay goes transparent and lets clicks through
+  say(big, sub) {
+    show('<div class="bigsay">' + big + '</div>' + (sub ? '<div class="subsay">' + sub + '</div>' : ''));
+    msg.className = 'say';
+  },
+  hot(i) { document.querySelectorAll('#pad button').forEach((b, k) => b.classList.toggle('hot', k === i)); },
   intro() {
     this.card('<p class="tag">about a minute</p><h1>Quick tutorial</h1>',
-      '<p>Three keys, one run, then a 1v1 against a bot. None of it counts towards your scores.</p>',
-      'Start', () => this.keys());
+      '<p>The keys, one run, then a 1v1. None of it counts.</p>', 'Start', () => this.keys());
   },
 
-  // ---- 1 of 5: the keys, learned on the real board. one tile per lane, and the
-  // lowest is outlined by the game's own renderer, so the thing you learn here is
-  // exactly the thing you will be looking at in a run.
+  // ---- the keys, on the real board. one tile per lane, and the lowest is outlined by
+  // the game's own renderer, so what is learnt here is what will be looked at in a run.
   keys() {
     this.lit = 0; this.wait = 0;
     running = false; started = false; freeze = 0; offset = 0; wrongLane = -1;
     waitForFirstKey = false; tiles = [0, 1, 2]; score = 0;
-    msg.style.display = 'none';
     resize(); hud(); draw(); field.focus();
-    this.paintKeys();
+    this.askKey();
   },
-  paintKeys() {
-    const b = $('mpbar');
-    b.className = 'tutbar'; b.style.display = 'flex';
-    const dots = '<span class="tdots">' + [0, 1, 2].map(i => '<i' + (i < this.lit ? ' class="on"' : '') + '></i>').join('') + '</span>';
-    b.innerHTML = dots + (this.lit < 3
-      ? 'press <kbd>' + esc(keyLabel(BINDS[this.lit]).toUpperCase()) + '</kbd> for the outlined tile'
-      : 'that is all three') + '<em>esc to skip</em>';
+  askKey() {
+    this.hot(this.lit);
+    this.say('Press <kbd>' + esc(keyLabel(BINDS[this.lit]).toUpperCase()) + '</kbd>', 'the outlined tile');
   },
   // the run loop is not turning, so the tile's slide needs a few frames of its own
   slide() {
@@ -1596,43 +1592,48 @@ const TUT = {
     if (i !== this.lit) return beep(110, .14, 'sawtooth', .05);
     sfxHit(i); this.lit++;
     tiles.shift(); offset += TILE_H; this.slide();
-    this.paintKeys();
-    if (this.lit < 3) return;
-    this.wait = -1;
-    setTimeout(() => { if (TUTOR) this.card(this.step(2) + '<h2>Now a run</h2>',
-      '<p>Tiles stack up the screen. Press the key for the <b>lowest</b> one, every time. A wrong key <b style="color:#bfe8ff">freezes you</b> for half a second, so accuracy beats hammering.</p>' +
-      '<p>Ten seconds, starting on your first key. Hit as many as you can.</p>',
-      'Go', () => this.go()); }, 850);
+    if (this.lit < 3) return this.askKey();
+    this.wait = -1; this.hot(-1);
+    this.say('That is the three', 'you can change these keys in settings later');
+    setTimeout(() => { if (TUTOR) this.frozen(); }, 1900);
   },
+  // the freeze is shown rather than described: the real overlay, on the real board
+  frozen() {
+    tiles = [1, 0, 2]; offset = 0; wrongLane = 2; freeze = 1.7;
+    this.say('Wrong key, <span class="ice">frozen</span>', 'so aim — do not hammer');
+    beep(110, .3, 'sawtooth', .1);
+    this._t = performance.now();
+    const step = () => {
+      if (!TUTOR) return;
+      const now = performance.now(), dt = Math.min((now - this._t) / 1000, .05);
+      this._t = now;
+      freeze -= dt;
+      if (freeze > 0) { draw(); return requestAnimationFrame(step); }
+      freeze = 0; wrongLane = -1; draw();
+      this.say('Hit as many as you can', '10 seconds · the clock starts on your first key');
+      setTimeout(() => { if (TUTOR) this.go(); }, 1900);
+    };
+    requestAnimationFrame(step);
+  },
+  go() { setMode(10); $('hud').classList.add('tut'); startRun({ onEnd: s => { $('hud').classList.remove('tut'); this.solo = s; this.board(); } }); },
 
-  // ---- 2 of 5: the real thing, ten seconds ----
-  go() { setMode(10); startRun({ onEnd: s => { this.solo = s; this.board(); } }); },
-
-  // ---- 3 of 5: where a score lands ----
+  // ---- where a score lands. the names are built around theirs, so there is always
+  // somebody above to climb past, which is the whole point of showing it.
   board() {
-    const rows = [['BRACKETBOB', 38], ['NOVAK', 31], ['MILO', 24], ['SPARK', 17], ['PENNY', 11], ['DAN', 5]]
-      .concat([[me ? me.username : 'YOU', this.solo, 1]])
-      .sort((a, b) => b[1] - a[1] || (a[2] ? 1 : -1))
-      .map(r => '<li' + (r[2] ? ' class="me"' : '') + '><span>' + esc(r[0]) + '</span><b>' + r[1] + '</b></li>').join('');
-    this.card(this.step(3) + '<h2>' + this.solo + ' tile' + (this.solo === 1 ? '' : 's') + '</h2>',
-      '<p>Every run goes on the board for its mode. This board is invented — the real one has today, this week and all time, for 10s, 20s and 30s separately.</p>' +
-      '<div id="lb"><button class="lbt">example board <span>10s mode</span></button><div id="lbbody"><ol>' + rows + '</ol></div></div>',
-      'Next', () => this.badges());
+    const s = this.solo, up = n => Math.max(0, s + n);
+    const rows = [['BRACKETBOB', up(12)], ['NOVAK', up(7)], ['MILO', up(3)],
+      [me ? me.username : 'YOU', s, 1], ['SPARK', up(-2)], ['PENNY', up(-5)], ['DAN', up(-9)]]
+      .map((r, i) => '<div class="tlbr' + (r[2] ? ' me' : '') + '"><span class="rk">' + (i + 1) + '</span>' +
+        '<span class="nm">' + esc(r[0]) + '</span><b>' + r[1] + '</b></div>').join('');
+    show('<div class="bigsay">' + s + ' tile' + (s === 1 ? '' : 's') + '</div>' +
+      '<div class="subsay">every run goes on the board · example</div>' +
+      '<div class="tlb">' + rows + '</div>' +
+      '<div class="subsay">practice your way to the top · scores and wins earn badges for your card</div>' +
+      '<div class="row"><button class="primary" id="tnext">Now a 1v1</button></div>', true);
+    $('tnext').onclick = () => this.find();
   },
 
-  // ---- 4 of 5: what you are playing for ----
-  badges() {
-    const chips = ['45 ' + MODE_ICON[10], '110 ' + MODE_ICON[20], '100 games 🎮', '1v1 winner 10x', '👑 Triple crown']
-      .map(l => '<span class="bn">' + l + '</span>').join('');
-    this.card(this.step(4) + '<h2>Badges</h2>',
-      '<p>Scores and wins earn badges, and they sit on the box with your name on it — the one your opponent sees in a lobby. Some examples:</p>' +
-      '<div class="slot filled" style="max-width:320px;margin:0 auto 10px"><div class="nm"><span>' + esc(me ? me.username : 'YOU') + '</span></div>' +
-      '<div class="bns">' + chips + '</div></div>' +
-      '<p>Top the board for a mode and you wear the world #1 banner until somebody takes it off you.</p>',
-      'Try a 1v1', () => this.find());
-  },
-
-  // ---- 5 of 5: a scripted single round ----
+  // ---- a scripted single round ----
   myCard(ready) {
     return playerCardHTML(me ? me.username : 'YOU', pickSkin(myStats, myBanner, myWorld),
       visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, ready);
@@ -1646,20 +1647,19 @@ const TUT = {
       '<div class="vs">VS</div><div class="dside">' + them + '</div></div>';
   },
   find() {
-    show(this.step(5) + '<h1>1v1</h1><p class="tag">tutorial · one round · 20s</p>' +
+    show('<h1>1v1</h1><p class="tag">tutorial · one round · 20s</p>' +
       '<div class="duel"><div class="dside">' + this.myCard(null) + '</div><div class="vs">VS</div>' +
       '<div class="dside"><div class="slot empty searching">searching…</div></div></div>' +
-      '<div class="waiting">out there this is whoever else is queuing for 1v1</div>', true);
+      '<div class="waiting">normally a real player from the queue</div>', true);
     setTimeout(() => { if (TUTOR) this.found(); }, 1700);
   },
   found() { this.ready = false; sfxFound(); this.paintDuel(); },
   paintDuel() {
-    show(this.step(5) + '<div class="foundbar"><b>OPPONENT FOUND</b><span>' +
+    show('<div class="foundbar"><b>OPPONENT FOUND</b><span>' +
       (this.ready ? 'waiting for your opponent…' : 'ready up to play') + '</span></div>' +
       '<p class="tag">tutorial · one round · 20s</p>' + this.sides(true, this.ready, false) +
       '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="tnext">' +
       (this.ready ? '✓ Ready' : 'Ready up') + '</button></div>' +
-      '<p>Neither of you can see the other until you have both readied up.</p>' +
       '<div class="keyhint"><kbd>R</kbd> ready up</div>', true);
     $('tnext').onclick = () => this.setReady();
   },
@@ -1669,7 +1669,7 @@ const TUT = {
     setTimeout(() => { if (TUTOR) this.reveal(); }, 950);
   },
   reveal() {
-    show(this.step(5) + '<div class="foundbar"><b>OPPONENT FOUND</b><span>starting…</span></div>' +
+    show('<div class="foundbar"><b>OPPONENT FOUND</b><span>starting…</span></div>' +
       '<p class="tag">tutorial · one round · 20s</p>' + this.sides(false, true, true), true);
     setTimeout(() => { if (TUTOR) this.count(); }, 1500);
   },
@@ -1683,7 +1683,8 @@ const TUT = {
         beep(440 + (3 - n) * 60, .12, 'triangle', .09); n--; return setTimeout(tick, 1000);
       }
       beep(880, .25, 'triangle', .12);
-      startRun({ autoStart: true, onEnd: s => this.result(s) });
+      $('hud').classList.add('tut');
+      startRun({ autoStart: true, onEnd: s => { $('hud').classList.remove('tut'); this.result(s); } });
     };
     tick();
   },
@@ -1704,15 +1705,13 @@ const TUT = {
       '<div class="matchend ' + (drew ? 'tie' : 'good') + '" style="--vd:1.55s">' +
       (drew ? 'Nothing in it' : 'You win!') + '</div>' +
       '<div class="revealctl late" style="--vd:1.55s">' +
-      '<p>A real 1v1 is best of three. Each side readies up between rounds, and a 20 second clock readies you anyway if you sit on it.</p>' +
+      '<p>A real 1v1 is best of three, with a ready-up between rounds.</p>' +
       '<div class="row"><button class="primary" id="tnext">Finish</button></div></div>', true);
     $('tnext').onclick = () => this.done();
   },
   done() {
     this.card('<h1>That is the game</h1>',
-      '<p><b>1v1</b> and <b>2v2</b> match you with whoever is queuing. <b>Join / create a lobby</b> is for playing someone you know.</p>' +
-      '<p>None of the tutorial was recorded, so your board is still empty. Go and fill it.</p>',
-      'Play', () => this.stop());
+      '<p>None of it was recorded. Go and fill your board.</p>', 'Play', () => this.stop());
   }
 };
 
