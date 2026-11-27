@@ -52,7 +52,20 @@ function applyTheme(id) {
   ls.set('codeTilesTheme', THEME);
   const pad = $('pad'); if (pad) pad.classList.toggle('mono', GMONO);
   document.querySelectorAll('#pad button').forEach((b, i) => { if (b.firstChild) b.firstChild.nodeValue = GLYPH[i]; });
+  saveLook();
 }
+// your tiles and your hit sound ride along on your profile, so a friend looking at
+// your card can see what you play with. fire and forget: it is decoration, not state.
+function saveLook() {
+  if (!me || !token) return;
+  try {
+    fetch(SUPABASE.url + '/rest/v1/profiles?id=eq.' + me.id, {
+      method: 'PATCH', headers: { ...jhead(), Prefer: 'return=minimal' },
+      body: JSON.stringify({ theme: THEME, sound: SOUND })
+    }).catch(() => {});
+  } catch (e) {}
+}
+const themeName = id => (THEMES.find(t => t.id === id) || {}).name || 'Calculus';
 const THEME_HTML = () => '<div id="thm" class="bnpicks">' + THEMES.map(t =>
   '<button class="thmpick' + (t.m ? ' mono' : '') + (THEME === t.id ? ' on' : '') + '" data-t="' + t.id + '">' +
   '<span class="thmg">' + t.g.map(g => '<i>' + esc(g) + '</i>').join('') + '</span>' +
@@ -152,7 +165,8 @@ const SOUNDS = [
   { id: 'laser', name: 'Laser', i: '\uD83D\uDEF8', hit: l => { const f = [1400, 1750, 2100][l]; swoop(f, f * .25, .14, 'sawtooth', .13); } }
 ];
 let SOUND = 'classic';
-function applySound(id) { SOUND = (SOUNDS.find(x => x.id === id) || SOUNDS[0]).id; ls.set('codeTilesSound', SOUND); }
+function applySound(id) { SOUND = (SOUNDS.find(x => x.id === id) || SOUNDS[0]).id; ls.set('codeTilesSound', SOUND); saveLook(); }
+const soundName = id => (SOUNDS.find(t => t.id === id) || {}).name || 'Classic';
 function sfxHit(l) { (SOUNDS.find(x => x.id === SOUND) || SOUNDS[0]).hit(l); }
 const SOUND_HTML = () => '<div id="snd" class="bnpicks">' + SOUNDS.map(t =>
   '<button class="thmpick sndpick' + (SOUND === t.id ? ' on' : '') + '" data-s="' + t.id + '">' +
@@ -327,7 +341,7 @@ function renderLb() {
 let bsMode = 0, bsTab = '';
 function bbRow(r) {
   const n = r.rnk, cls = (n === 1 ? 'g' : n === 2 ? 's' : n === 3 ? 'b' : '') + (r.mine ? ' me' : '');
-  return '<li class="' + cls.trim() + '"><span class="rk">#' + n + '</span><span class="nm">' +
+  return '<li class="' + cls.trim() + '"' + (r.uid ? ' data-prof="' + r.uid + '"' : '') + '><span class="rk">#' + n + '</span><span class="nm">' +
     esc((r.username || 'anon').slice(0, 18)) + '</span><b>' + (r.best | 0) + '</b></li>';
 }
 function boardScreen(mode, tab) {
@@ -354,6 +368,11 @@ function boardScreen(mode, tab) {
 }
 document.addEventListener('click', e => {
   if (!e.target.closest) return;
+  const who = e.target.closest('[data-prof]');
+  if (who && who.dataset.prof && me) {
+    const from = $('bigboard') ? () => boardScreen(bsMode, bsTab) : $('fr') && !$('lb') ? friendsScreen : home;
+    return openProfile(who.dataset.prof, who.dataset.pn || (who.querySelector('.nm') || {}).textContent || '', from);
+  }
   if (e.target.closest('#lbopen')) return boardScreen(DURATION, lbTab);
   const b = e.target.closest('#lb button[data-tab]');
   if (!b) return; lbTab = b.dataset.tab; ls.set('codeTilesLbTab', lbTab); renderLb(); field.focus();
@@ -407,8 +426,22 @@ async function declineRequest(id, dir) {
 async function removeFriend(id) { await rpc('remove_friend', { other: id }); }
 // banners for the people asking to be friends. keyed on the set of ids, so the
 // re-render this triggers cannot loop: the second pass finds the key unchanged.
-let fcards = { skins: {}, banners: {} }, fcardKey = '';
+let fcards = { skins: {}, banners: {} }, fcardKey = '', foes = [], foesAt = 0;
+// people you have played against, for the suggestion list. refreshed at most once a
+// minute: it only changes when a match ends, and every friends render would ask.
+async function loadFoes(inLobby) {
+  if (!me || Date.now() - foesAt < 60000) return;
+  foesAt = Date.now();
+  try {
+    const r = await rpc('recent_foes', {});
+    const rows = r.ok ? await r.json() : [];
+    const before = foes.map(f => f.uid).join(',');
+    foes = rows;
+    if (rows.map(f => f.uid).join(',') !== before && $('fr')) refreshFriends(inLobby);
+  } catch (e) {}
+}
 async function loadFriendCards(inLobby) {
+  loadFoes(inLobby);
   const ids = [...new Set(reqs.filter(r => r.direction === 'in').map(r => r.other_id))];
   if (!ids.length) { fcardKey = ''; return; }
   const key = ids.slice().sort().join(',');
@@ -434,21 +467,32 @@ function FRIENDS_HTML(inLobby) {
   // would sit behind in a lobby, so you can see who you are agreeing to play
   const reqHtml = incoming.length ? '<div class="reqs">' + incoming.map(r =>
     '<div class="freq">' +
+    (inLobby ? '' : '<div class="pname" data-prof="' + r.other_id + '" data-pn="' + esc(r.username) + '">') +
     playerCardHTML(r.username, fcards.skins[r.other_id], fcards.banners[r.other_id], false, null) +
+    (inLobby ? '' : '</div>') +
     '<div class="freqbtns"><button class="small acc" data-acc="' + r.other_id + '">accept</button>' +
     '<button class="small" data-dec="' + r.other_id + '">decline</button></div></div>').join('') + '</div>' : '';
   const list = friends.length ? friends.map(f => {
     const on = online.has(f.id);
-    return '<div class="f"><div class="dot' + (on ? ' on' : '') + '"></div><div class="n">' + esc(f.username) + '</div>' +
+    return '<div class="f"><div class="dot' + (on ? ' on' : '') + '"></div>' +
+      (inLobby ? '<div class="n">' + esc(f.username) + '</div>'
+        : '<div class="n pname" data-prof="' + f.id + '" data-pn="' + esc(f.username) + '">' + esc(f.username) + '</div>') +
       '<div class="bns"></div>' +
       (inLobby && on ? '<button class="small" data-inv="' + f.id + '">invite</button>' : '') +
       '<button class="small" data-unfriend="' + f.id + '" title="remove">\u00d7</button></div>';
   }).join('') : '<div class="empty">no friends yet \u2014 send someone a request</div>';
   const pend = outgoing.length ? '<div class="empty">pending: ' + outgoing.map(r => esc(r.username)).join(', ') + '</div>' : '';
+  // somebody you have already played is a better suggestion than any list we could invent
+  const known = new Set([...friends.map(f => f.id), ...reqs.map(r => r.other_id), (me || {}).id]);
+  const sugg = foes.filter(f => !known.has(f.uid)).slice(0, 5);
+  const suggHtml = (sugg.length && !inLobby) ? '<div class="sugg"><h4>RECENTLY PLAYED</h4>' + sugg.map(f =>
+    '<div class="f"><div class="n pname" data-prof="' + f.uid + '" data-pn="' + esc(f.username) + '">' + esc(f.username) + '</div>' +
+    '<span class="cnt">' + f.matches + '</span>' +
+    '<button class="small" data-fadd="' + esc(f.username) + '">add</button></div>').join('') + '</div>' : '';
   return '<div class="friends" id="fr"><h4>FRIENDS <span style="color:var(--dim);font-weight:500">' +
     (incoming.length ? '<b style="color:var(--gold)">' + incoming.length + ' request' + (incoming.length > 1 ? 's' : '') + '</b> \u00b7 ' : '') +
     friends.filter(f => online.has(f.id)).length + ' online</span></h4>' +
-    reqHtml + list + pend +
+    reqHtml + list + pend + suggHtml +
     '<div class="addrow"><input id="fadd" maxlength="16" placeholder="REQUEST BY USERNAME" class="uc"><button class="small" id="fgo">send</button></div><div id="ferr"></div></div>';
 }
 function bindFriends(inLobby) {
@@ -470,10 +514,68 @@ function bindFriends(inLobby) {
   document.querySelectorAll('[data-dec]').forEach(b => b.onclick = async () => { b.disabled = true; await declineRequest(b.dataset.dec, 'in'); await loadFriends(); refreshFriends(inLobby); });
   document.querySelectorAll('[data-unfriend]').forEach(b => b.onclick = async () => { await removeFriend(b.dataset.unfriend); await loadFriends(); refreshFriends(inLobby); });
   document.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => { MP.invite(b.dataset.inv); b.textContent = 'sent'; b.disabled = true; });
+  document.querySelectorAll('[data-fadd]').forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = 'sent';
+    try { const out = await sendRequest(b.dataset.fadd); if (out === 'sent') { const t = await findId(b.dataset.fadd); if (t) pingUser(t, 'friendreq'); } } catch (e) {}
+    await loadFriends(); refreshFriends(inLobby);
+  });
 }
 function refreshFriends(inLobby) {
   const el = $('fr'); if (!el) return;
   el.outerHTML = FRIENDS_HTML(inLobby); bindFriends(inLobby);
+}
+
+/* ---------- another player's card ---------- */
+// what one player looks like from the outside: their box as everyone sees it, what
+// they have scored, how their duels have gone, and how they have gone against you.
+let profBack = null;
+function openProfile(id, name, back) {
+  profBack = back || profBack || home;
+  playerScreen(id, name);
+}
+const fmtJoined = s => { try { return new Date(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return '—'; } };
+async function playerScreen(id, name) {
+  show('<h1>' + esc(name || '') + '</h1><div class="waiting">loading…</div>', true);
+  const back = profBack || home;
+  try {
+    const [rows, stats, profs] = await Promise.all([
+      rpc('player_profile', { p_id: id }).then(r => r.ok ? r.json() : []),
+      fetchStats([id]),
+      fetch(SUPABASE.url + '/rest/v1/profiles?select=id,username,shown,banner,world&id=eq.' + id, { headers: headers() }).then(r => r.ok ? r.json() : [])
+    ]);
+    const p = (rows && rows[0]) || {}, pf = (profs && profs[0]) || {};
+    const who = pf.username || name || '';
+    const card = playerCardHTML(who, pickSkin(stats[id], pf.banner || 'none', pf.world),
+      visibleBadges(earnedBanners(stats[id], false), pf.shown, pf.world), false, null);
+    // a rank only means something if they have actually set a score in that mode
+    const modes = [10, 20, 30].map(m => {
+      const b = p['b' + m];
+      return '<div class="pstat"><span class="k">' + MODE_ICON[m] + ' ' + m + 's</span>' +
+        '<b>' + (b == null ? '—' : b) + '</b>' +
+        '<span class="v">' + (b == null ? 'no runs' : '#' + p['r' + m] + ' of players') + '</span></div>';
+    }).join('');
+    const mine = id === (me || {}).id;
+    const hhPlayed = (p.hh_w | 0) + (p.hh_l | 0);
+    const hh = mine ? '' : '<div class="pvp' + (p.hh_l > p.hh_w ? ' up' : p.hh_l < p.hh_w ? ' down' : '') + '">' +
+      (hhPlayed
+        ? '<span class="k">you vs ' + esc(who) + '</span><b>' + (p.hh_l | 0) + ' – ' + (p.hh_w | 0) + '</b>' +
+          '<span class="v">' + hhPlayed + ' 1v1' + (hhPlayed > 1 ? 's' : '') + ' played</span>'
+        : '<span class="k">you vs ' + esc(who) + '</span><b>—</b><span class="v">never played</span>') + '</div>';
+    show('<h1>' + esc(who) + '</h1>' +
+      '<div class="pcard">' + card + '</div>' +
+      '<div class="pstats">' + modes + '</div>' +
+      '<div class="pstats">' +
+        '<div class="pstat"><span class="k">1v1 record</span><b>' + (p.w1 | 0) + ' – ' + (p.l1 | 0) + '</b><span class="v">won – lost</span></div>' +
+        '<div class="pstat"><span class="k">2v2</span><b>' + (p.m2 | 0) + '</b><span class="v">matches played</span></div>' +
+        '<div class="pstat"><span class="k">runs</span><b>' + (p.games | 0) + '</b><span class="v">logged</span></div>' +
+      '</div>' + hh +
+      '<p>joined ' + fmtJoined(p.joined) + ' · plays with <b>' + esc(themeName(p.theme)) + '</b> tiles and the <b>' + esc(soundName(p.sound)) + '</b> sound</p>' +
+      '<button class="ghost" id="bk">Back</button>', true);
+    $('bk').onclick = () => { profBack = null; back(); };
+  } catch (e) {
+    show('<h1>' + esc(name || '') + '</h1><p>Could not load that profile.</p><button class="ghost" id="bk">Back</button>', true);
+    $('bk').onclick = () => { profBack = null; back(); };
+  }
 }
 
 /* ---------- banners ---------- */
@@ -630,6 +732,7 @@ async function loadMyProfile() {
     myBanner = rows.length && rows[0].banner ? rows[0].banner : 'none';
     myWorld = rows.length ? rows[0].world : null;
   } catch (e) { myShown = null; myBanner = 'none'; myWorld = null; }
+  saveLook();  // existing accounts have never written theirs: do it once on sign-in
 }
 async function saveWorld(id) {
   myWorld = id;
