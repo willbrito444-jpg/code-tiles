@@ -823,7 +823,6 @@ function startPresence() {
     .on('broadcast', { event: 'friendreq' }, ({ payload }) => toastMsg((payload && payload.from ? payload.from : 'Someone') + ' sent you a friend request'))
     .on('broadcast', { event: 'friendok' }, ({ payload }) => toastMsg((payload && payload.from ? payload.from : 'Someone') + ' accepted your friend request'))
     .on('broadcast', { event: 'teaminv' }, ({ payload }) => toastTeam(payload))
-    .on('broadcast', { event: 'teamok' }, ({ payload }) => MP.onTeamOk(payload))
     .subscribe();
 }
 async function toastMsg(text) {
@@ -853,9 +852,8 @@ function toastTeam(p) {
   beep(660, .1, 'triangle', .09); setTimeout(() => beep(990, .12, 'triangle', .09), 110);
   d.querySelector('[data-y]').onclick = () => {
     d.remove();
-    MP.party = p.party; MP.mate = { id: p.pid, name: p.from || 'teammate' }; MP.mateAsked = null;
-    pingUser(p.pid, 'teamok', { party: p.party, pid: me.id });
     MP.duel(2);
+    MP.duoJoin(p.party, false);
   };
   d.querySelector('[data-x]').onclick = () => d.remove();
   setTimeout(() => d.remove(), 30000);
@@ -1178,9 +1176,15 @@ const MP = {
       this.roster.forEach((p, k) => (this.teamOf(k) === mt ? us : them).push(p));
     }
     // my own card comes from my live profile until presence has me, so the banner never blanks
-    const left = (inLobby && us.length ? us.map(card).join('')
-      : playerCardHTML(me.username, pickSkin(myStats, myBanner, myWorld), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null, me.id)) +
-      this.emptySlots(n - Math.max(1, us.length), state, 'teammate');
+    const seated = inLobby && us.length;
+    // before the queue there is no roster, but an invited teammate is really here:
+    // show them in the slot they will play in rather than "no teammate yet"
+    const mateSlot = (!seated && this.mate)
+      ? playerCardHTML(this.mate.name, (this.mateCard || {}).skin, (this.mateCard || {}).badges, false, null, this.mate.id)
+      : '';
+    const left = (seated ? us.map(card).join('')
+      : playerCardHTML(me.username, pickSkin(myStats, myBanner, myWorld), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null, me.id) + mateSlot) +
+      this.emptySlots(n - (seated ? us.length : 1 + (mateSlot ? 1 : 0)), state, 'teammate');
     // only the other side is hidden: a teammate you cannot see is no comfort, and the
     // point is to stop someone conceding to a banner rather than to a player
     const veil = this.cfg.quick && !this.revealed;
@@ -1200,7 +1204,8 @@ const MP = {
     const modes = [10, 20, 30].map(m => '<button class="ghost fmtbtn' + (this.duelMode === m ? ' on' : '') + '" data-dm="' + m + '"' + (state === 'idle' ? '' : ' disabled') + '>' + MODE_ICON[m] + ' ' + m + 's</button>').join('');
     let action;
     const need = (this.duelTeam || 1) * 2;
-    if (state === 'idle') action = '<div class="row"><button class="primary" id="dfind">' + (need > 2 ? 'Find a match' : 'Find opponent') + '</button></div>';
+    if (state === 'idle') action = '<div class="row"><button class="primary" id="dfind">' +
+      (need > 2 ? (this.mate ? 'Find opponents' : 'Find players') : 'Find opponent') + '</button></div>';
     else if (state === 'searching') action = '<div class="waiting">waiting for ' + (need > 2 ? (need - 1) + ' more players' : 'someone') + ' to join\u2026</div><div class="row"><button class="ghost" id="dcan">Cancel</button></div>';
     else action = '<div class="row"><button class="ghost readybtn' + (this.ready ? ' on' : '') + '" id="rdy">' + (this.ready ? '\u2713 Ready' : 'Ready up') + '</button></div>' +
       '<div class="keyhint"><kbd>R</kbd> ready up</div>';
@@ -1243,23 +1248,71 @@ const MP = {
   // the 2v2 queue is a table of its own, so a 1v1 search never sees a 2v2 waiter
   // picking a teammate before you queue. the pair is a uuid both of you carry; the
   // matchmaker keeps you together and fills the other side with whoever is waiting.
-  party: null, mate: null, mateAsked: null,
-  clearParty() { this.party = null; this.mate = null; this.mateAsked = null; },
+  party: null, mate: null, mateAsked: null, duoCh: null, duoHost: false, mateCard: null, mateCardId: '',
+  clearParty() {
+    if (this.duoCh) { try { this.duoCh.send({ type: 'broadcast', event: 'bye', payload: {} }); } catch (e) {} }
+    this.duoLeave();
+    this.party = null; this.mate = null; this.mateAsked = null; this.mateCard = null; this.mateCardId = '';
+  },
+  // the pair's own room. you see each other sitting there before anyone queues, and
+  // one press of find puts both of you in: the other half is told to queue too.
+  duoJoin(party, isHost) {
+    const c = client(); if (!c) return;
+    this.duoLeave();
+    this.party = party; this.duoHost = !!isHost;
+    this.duoCh = c.channel('duo-' + party, { config: { presence: { key: me.id }, broadcast: { self: false } } });
+    this.duoCh
+      .on('presence', { event: 'sync' }, () => {
+        if (!this.duoCh) return;
+        const st = this.duoCh.presenceState(), list = [];
+        Object.keys(st).forEach(k => { const m = st[k][0]; if (m && m.pid) list.push(m); });
+        const other = list.find(x => x.pid !== me.id);
+        const had = !!this.mate;
+        this.mate = other ? { id: other.pid, name: other.name } : null;
+        if (other) { this.mateAsked = null; this.loadMateCard(); }
+        else if (had) { this.mateCard = null; this.mateCardId = ''; toastMsg('your teammate left'); }
+        if ($('dfind')) this.renderDuel('idle');
+      })
+      .on('broadcast', { event: 'go' }, ({ payload }) => {
+        if (payload && payload.mode) this.duelMode = payload.mode;
+        this.search();
+      })
+      .on('broadcast', { event: 'bye' }, () => { this.clearParty(); if ($('dfind')) this.renderDuel('idle'); })
+      .subscribe(st => { if (st === 'SUBSCRIBED' && this.duoCh) this.duoCh.track({ pid: me.id, name: me.username, at: Date.now() }); });
+  },
+  duoLeave() {
+    if (this.duoCh) { try { this.duoCh.unsubscribe(); } catch (e) {} this.duoCh = null; }
+    this.duoHost = false;
+  },
+  async loadMateCard() {
+    const id = this.mate && this.mate.id;
+    if (!id || this.mateCardId === id) return;
+    this.mateCardId = id;
+    try {
+      const [stats, profs] = await Promise.all([
+        fetchStats([id]),
+        fetch(SUPABASE.url + '/rest/v1/profiles?select=id,shown,banner,world&id=eq.' + id, { headers: headers() }).then(r => r.ok ? r.json() : [])
+      ]);
+      const pf = profs[0] || {};
+      this.mateCard = { skin: pickSkin(stats[id], pf.banner || 'none', pf.world),
+        badges: visibleBadges(earnedBanners(stats[id], false), pf.shown, pf.world) };
+      if ($('dfind')) this.renderDuel('idle');
+    } catch (e) {}
+  },
   teamRow() {
     if ((this.duelTeam || 1) < 2) return '';
-    if (this.mate) return '<div class="mate ok"><span class="k">TEAMMATE</span><b>' + esc(this.mate.name) +
-      '</b><button class="small" id="mateoff">remove</button>' +
-      '<span class="note">you both need to press Find</span></div>';
-    if (this.mateAsked) return '<div class="mate"><span class="k">TEAMMATE</span><b>' + esc(this.mateAsked.name) +
-      '</b><span class="note">invited \u2014 waiting for them\u2026</span>' +
-      '<button class="small" id="mateoff">cancel</button></div>';
+    if (this.mate) return '<div class="mate ok"><span class="k">YOUR TEAM</span><b>you and ' + esc(this.mate.name) +
+      '</b><button class="small" id="mateoff">leave team</button></div>';
+    if (this.mateAsked) return '<div class="mate"><span class="k">INVITED</span><b>' + esc(this.mateAsked.name) +
+      '</b><button class="small" id="mateoff">cancel</button>' +
+      '<span class="note">waiting for them to accept\u2026</span></div>';
     const on = friends.filter(f => online.has(f.id));
     if (!on.length) return '<div class="mate none">' +
-      (friends.length ? 'no friends online right now' : 'add friends to pick a teammate') +
-      ' \u00b7 you will be given a random one</div>';
-    return '<div class="mate"><span class="k">BRING A TEAMMATE</span>' + on.slice(0, 4).map(f =>
+      (friends.length ? 'no friends online right now' : 'add friends to invite a teammate') +
+      ' \u00b7 find players and you get a random one</div>';
+    return '<div class="mate"><span class="k">INVITE A TEAMMATE</span>' + on.slice(0, 4).map(f =>
       '<button class="small" data-mate="' + f.id + '" data-mn="' + esc(f.username) + '">' + esc(f.username) + '</button>').join('') +
-      '<span class="note">or leave it and get a random one</span></div>';
+      '<span class="note">or just find players and take a random one</span></div>';
   },
   askMate(id, name) {
     // the column is a uuid, so the fallback has to be uuid-shaped, not merely unique
@@ -1269,15 +1322,9 @@ const MP = {
           return (ch === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
         });
     this.mateAsked = { id: id, name: name };
+    this.duoJoin(this.party, true);
     pingUser(id, 'teaminv', { party: this.party, pid: me.id });
     this.renderDuel('idle');
-  },
-  // they said yes: both sides now hold the same party id
-  onTeamOk(p) {
-    if (!p || p.party !== this.party) return;
-    this.mateAsked = null; this.mate = { id: p.pid, name: p.from || 'teammate' };
-    toastMsg((p.from || 'They') + ' is your teammate');
-    if ($('dfind')) this.renderDuel('idle');
   },
   qmFns() {
     return (this.duelTeam || 1) > 1
@@ -1287,6 +1334,8 @@ const MP = {
   async search() {
     const mode = this.duelMode, fn = this.qmFns();
     audioOn();  // a click, so the cue can actually sound when somebody turns up
+    // whoever presses it takes both of you into the queue; the other half is told
+    if (this.duoCh && this.mate) { try { this.duoCh.send({ type: 'broadcast', event: 'go', payload: { mode: mode } }); } catch (e) {} }
     this.qmOff = false;
     this.renderDuel('searching');
     try {
@@ -1322,6 +1371,7 @@ const MP = {
   startQuick(code, mode, isHost) {
     const n = this.duelTeam || 1;
     this.qmStop();
+    this.duoLeave();  // the pair is in the match now; party stays so teams group right
     this.join(code, isHost);
     this.cfg = { format: 'shootout', mode: mode, teamSize: n, rounds: 3, quick: true };
   },
