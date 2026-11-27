@@ -206,6 +206,7 @@ function startRun(opts) {
   requestAnimationFrame(loop);
 }
 function press(l) {
+  if (TUT.wait >= 0) return TUT.onKey(l);
   if (!running || freeze > 0) return;
   started = true;
   if (tiles[0] === l) {
@@ -1535,7 +1536,7 @@ const TUT = {
   wait: -1, lit: 0, solo: 0, was: 30, ready: false, back: '', BOT: 'TILEBOT',
   start(back) { TUTOR = true; this.back = back || ''; this.lit = 0; this.solo = 0; this.ready = false; this.was = DURATION; this.intro(); },
   stop() {
-    TUTOR = false; this.wait = -1; running = false; onRoundEnd = null;
+    TUTOR = false; this.wait = -1; running = false; onRoundEnd = null; this.clearBar();
     ls.set('codeTilesTut', '1');
     if (DURATION !== this.was) setMode(this.was);
     // back where it was launched from: the practice menu is not the home screen
@@ -1543,7 +1544,9 @@ const TUT = {
     home();
   },
   step(n) { return '<p class="tag">tutorial · ' + n + ' of 5</p>'; },
+  clearBar() { const b = $('mpbar'); b.className = ''; b.style.display = 'none'; b.innerHTML = ''; },
   card(top, body, btn, fn) {
+    this.clearBar();
     show(top + body + '<div class="row"><button class="primary" id="tnext">' + btn + '</button></div>' +
       '<div class="keyhint"><kbd>Enter</kbd> continue · <kbd>Esc</kbd> skip the tutorial</div>', true);
     $('tnext').onclick = fn;
@@ -1554,26 +1557,52 @@ const TUT = {
       'Start', () => this.keys());
   },
 
-  // ---- 1 of 5: the keys. no clock and no tiles, just the three of them ----
-  keys() { this.lit = 0; this.wait = 0; this.paintKeys(); },
+  // ---- 1 of 5: the keys, learned on the real board. one tile per lane, and the
+  // lowest is outlined by the game's own renderer, so the thing you learn here is
+  // exactly the thing you will be looking at in a run.
+  keys() {
+    this.lit = 0; this.wait = 0;
+    running = false; started = false; freeze = 0; offset = 0; wrongLane = -1;
+    waitForFirstKey = false; tiles = [0, 1, 2]; score = 0;
+    msg.style.display = 'none';
+    resize(); hud(); draw(); field.focus();
+    this.paintKeys();
+  },
   paintKeys() {
-    const chips = BINDS.map((k, i) => '<div class="tkey' + (i < this.lit ? ' done' : i === this.lit && this.wait >= 0 ? ' now' : '') +
-      '" style="--c:' + COL[i] + '"><b>' + esc(GLYPH[i]) + '</b><kbd>' + esc(keyLabel(k).toUpperCase()) + '</kbd></div>').join('');
-    const nxt = esc(keyLabel(BINDS[Math.min(2, this.lit)]).toUpperCase());
-    show(this.step(1) + '<h2>Three lanes, three keys</h2>' +
-      '<div class="tkeys">' + chips + '</div>' +
-      '<p>' + (this.lit < 3 ? 'Press <kbd>' + nxt + '</kbd>' : 'All three. They are yours — rebind them any time from the home screen.') + '</p>' +
-      '<div class="keyhint"><kbd>Esc</kbd> skip the tutorial</div>', true);
+    const b = $('mpbar');
+    b.className = 'tutbar'; b.style.display = 'flex';
+    const dots = '<span class="tdots">' + [0, 1, 2].map(i => '<i' + (i < this.lit ? ' class="on"' : '') + '></i>').join('') + '</span>';
+    b.innerHTML = dots + (this.lit < 3
+      ? 'press <kbd>' + esc(keyLabel(BINDS[this.lit]).toUpperCase()) + '</kbd> for the outlined tile'
+      : 'that is all three') + '<em>esc to skip</em>';
+  },
+  // the run loop is not turning, so the tile's slide needs a few frames of its own
+  slide() {
+    this._t = performance.now();
+    if (this._anim) return;
+    this._anim = true;
+    const step = () => {
+      if (!TUTOR) { this._anim = false; return; }
+      const now = performance.now(), dt = Math.min((now - this._t) / 1000, .05);
+      this._t = now;
+      offset = Math.max(0, offset - SLIDE_SPEED * dt);
+      draw();
+      if (offset > 0) requestAnimationFrame(step); else this._anim = false;
+    };
+    requestAnimationFrame(step);
   },
   onKey(i) {
+    if (this.lit >= 3) return;
     if (i !== this.lit) return beep(110, .14, 'sawtooth', .05);
     sfxHit(i); this.lit++;
-    if (this.lit < 3) return this.paintKeys();
-    this.wait = -1; this.paintKeys();
+    tiles.shift(); offset += TILE_H; this.slide();
+    this.paintKeys();
+    if (this.lit < 3) return;
+    this.wait = -1;
     setTimeout(() => { if (TUTOR) this.card(this.step(2) + '<h2>Now a run</h2>',
       '<p>Tiles stack up the screen. Press the key for the <b>lowest</b> one, every time. A wrong key <b style="color:#bfe8ff">freezes you</b> for half a second, so accuracy beats hammering.</p>' +
       '<p>Ten seconds, starting on your first key. Hit as many as you can.</p>',
-      'Go', () => this.go()); }, 800);
+      'Go', () => this.go()); }, 850);
   },
 
   // ---- 2 of 5: the real thing, ten seconds ----
@@ -1705,12 +1734,6 @@ addEventListener('keydown', e => {
     if (MP.phase === 'countdown' || MP.phase === 'playing') return;
     if (TUTOR) return TUT.stop();
     home(); return;
-  }
-  // the tutorial asks for one key at a time, and ignores the other two until it has it
-  if (TUT.wait >= 0) {
-    const t = KEY[e.key.toLowerCase()];
-    if (t !== undefined) { e.preventDefault(); TUT.onKey(t); }
-    return;
   }
   // r restarts a solo run, and stands in for the ready button inside a match, where
   // restarting is not on offer. skipped entirely if r has been bound to a lane.
