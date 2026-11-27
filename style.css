@@ -602,3 +602,33 @@ ol.bb li[data-prof]:hover { outline:1px solid rgba(92,200,255,.35); }
 .bnpicks { display:flex; flex-wrap:wrap; gap:5px; padding:3px 0 6px; }
 .bnpick { border-radius:20px; }
 .bnpick.on { outline:2px solid var(--gold); outline-offset:1px; }
+
+/* ---- inviting a 2v2 teammate: the button sits in the seat it would fill ---- */
+.slot.empty.open { border-style:dashed; font-style:normal; gap:8px; }
+.ivbtn { background:linear-gradient(180deg,#235b8f,#1b4670); border-color:#357ab5; color:#eaf4ff; }
+.ivbtn:hover { background:linear-gradient(180deg,#2a6ba6,#204f7d); }
+.ivor { font-size:10px; color:var(--dim); font-style:italic; }
+/* an invite nobody has answered: their box, but clearly not yet theirs */
+.pending .slot { border-style:dashed; border-color:#3f7ba8; animation:holo 1.5s ease-in-out infinite; }
+.pending .slot .ribbon { opacity:.45; }
+@keyframes holo {
+  0%, 100% { opacity:.4; box-shadow:0 0 0 rgba(93,169,255,0); }
+  50% { opacity:.82; box-shadow:0 0 20px rgba(93,169,255,.3); }
+}
+.pwait { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:6px; }
+.pwait span { font-size:10px; letter-spacing:.7px; font-weight:800; text-transform:uppercase; color:#8cc4ec; }
+.pwait b { color:#dcefff; font-variant-numeric:tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .pending .slot { animation:none; opacity:.62; } }
+/* the friends list, over the duel screen so nothing underneath is lost */
+#mpick { position:fixed; inset:0; z-index:49; display:flex; align-items:center; justify-content:center;
+  padding:18px; background:rgba(6,9,13,.74); backdrop-filter:blur(3px); }
+.mpbox { width:100%; max-width:330px; max-height:72vh; overflow:auto; padding:14px;
+  background:#0e141c; border:1px solid #2d3a49; border-radius:14px; box-shadow:0 18px 50px rgba(0,0,0,.6); }
+.mphead { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+.mphead b { font-size:13px; letter-spacing:.8px; text-transform:uppercase; }
+.mplist { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.mplist li { display:flex; align-items:center; gap:8px; padding:8px 10px;
+  border:1px solid var(--line); border-radius:10px; background:#0d131b; }
+.mpn { font-size:13px; font-weight:800; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.mpoff, .mphint { font-size:10px; color:var(--dim); font-style:italic; }
+.mpnone { font-size:12px; color:var(--dim); margin:0 0 10px; }
