@@ -418,6 +418,7 @@ async function loadFriends() {
     }
   } catch (e) { friends = []; }
   try { const q = await rpc('my_requests'); reqs = q.ok ? await q.json() : []; } catch (e) { reqs = []; }
+  seedDemoFriends();  // no-op off the preview; there it keeps the stand-ins through a refresh
   return friends;
 }
 async function sendRequest(name) {
