@@ -45,7 +45,7 @@ const THEMES = [
   { id: 'space', name: 'Space', m: 1, g: ['🌙', '⭐', '🪐'] },
   { id: 'food', name: 'Food', m: 1, g: ['🍕', '🍔', '🍩'] }
 ];
-let GLYPH = ['(', '[', '{'], THEME = 'brackets', GMONO = false;
+let GLYPH = ['∫', '∑', '√'], THEME = 'calc', GMONO = false;
 function applyTheme(id) {
   const t = THEMES.find(x => x.id === id) || THEMES[0];
   THEME = t.id; GLYPH = t.g.slice(); GMONO = !!t.m;
@@ -1768,7 +1768,7 @@ document.querySelectorAll('#pad button').forEach(b => b.addEventListener('pointe
 
 /* ---------- boot ---------- */
 rebuildKeys();
-applyTheme(ls.get('codeTilesTheme', 'brackets'));
+applyTheme(ls.get('codeTilesTheme', 'calc'));
 applySound(ls.get('codeTilesSound', 'classic'));
 /* ---------- practice: the real duel, played against bots ----------
    add ?preview to the url. this is not a mock of the duel screens: it is the duel,
