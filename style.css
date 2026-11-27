@@ -562,6 +562,31 @@ ol.bb li.me .rk { color:var(--acc); }
 .friends .freq:first-of-type { border-top:0; padding-top:0; }
 .friends .freq .slot { margin-bottom:6px; min-height:0; }
 .friends .freqbtns { display:flex; gap:6px; }
+/* a name you can open */
+.pname { cursor:pointer; }
+.friends .n.pname:hover { color:var(--acc); text-decoration:underline; }
+#lb ol.bb li[data-prof], ol.bb li[data-prof] { cursor:pointer; }
+ol.bb li[data-prof]:hover { outline:1px solid rgba(92,200,255,.35); }
+/* people you have played, offered as friends */
+.friends .sugg { margin-top:8px; border-top:1px solid rgba(255,255,255,.08); padding-top:6px; }
+.friends .sugg h4 { margin:0 0 4px; color:var(--dim); }
+.friends .sugg .cnt { font-size:10px; color:var(--dim); font-weight:800; }
+/* one player's card, opened from a name */
+.pcard { width:100%; max-width:360px; }
+.pstats { display:flex; gap:7px; width:100%; max-width:360px; }
+.pstat { flex:1 1 0; min-width:0; border:1px solid var(--line); border-radius:10px;
+  background:#0d131b; padding:8px 6px; text-align:center; display:flex; flex-direction:column; gap:2px; }
+.pstat .k { font-size:10px; letter-spacing:.5px; color:var(--dim); font-weight:800; }
+.pstat b { font-size:20px; font-weight:900; font-variant-numeric:tabular-nums; color:var(--fg); }
+.pstat .v { font-size:9px; color:var(--dim); }
+.pvp { width:100%; max-width:360px; border:1px solid var(--line); border-radius:12px;
+  background:#0d131b; padding:10px; display:flex; flex-direction:column; gap:3px; align-items:center; }
+.pvp .k { font-size:10px; letter-spacing:1px; color:var(--dim); font-weight:800; text-transform:uppercase; }
+.pvp b { font-size:28px; font-weight:900; font-variant-numeric:tabular-nums; }
+.pvp .v { font-size:10px; color:var(--dim); }
+.pvp.up { border-color:rgba(74,222,128,.5); } .pvp.up b { color:var(--good); }
+.pvp.down { border-color:rgba(255,92,108,.45); } .pvp.down b { color:var(--bad); }
+@media (max-width: 620px) { .pstat b { font-size:17px; } .pstat .k { font-size:9px; } }
 
 .bnpicks { display:flex; flex-wrap:wrap; gap:5px; padding:3px 0 6px; }
 .bnpick { border-radius:20px; }
