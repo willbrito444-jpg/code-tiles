@@ -455,21 +455,15 @@ ol.bb li.me .rk { color:var(--acc); }
 /* once you are ready it stops asking and just confirms */
 .readybtn.on { background:linear-gradient(180deg,var(--good),#2fa35c); color:#06111a;
   border-color:var(--good); animation:none; transform:none; box-shadow:0 0 16px rgba(74,222,128,.35); }
-/* tutorial: the three keys, learned one at a time */
-.tkeys { display:flex; gap:10px; justify-content:center; margin:14px 0 4px; }
-.tkey { width:84px; padding:12px 0 9px; border:1px solid var(--line); border-radius:12px;
-  background:#0d131b; display:flex; flex-direction:column; align-items:center; gap:7px;
-  opacity:.4; transition:opacity .2s, border-color .2s, transform .2s; }
-.tkey b { font-size:30px; font-weight:800; line-height:1; color:var(--c); }
-.tkey kbd { font-size:13px; }
-.tkey.now { opacity:1; border-color:var(--c);
-  animation:tkeynudge 1.05s ease-in-out infinite; }
-.tkey.done { opacity:1; border-color:var(--good); background:rgba(74,222,128,.07); }
-@keyframes tkeynudge {
-  0%,100% { transform:scale(1); box-shadow:0 0 0 0 rgba(255,255,255,.18); }
-  50%     { transform:scale(1.07); box-shadow:0 0 18px 0 rgba(255,255,255,.14); }
-}
-@media (prefers-reduced-motion: reduce) { .tkey.now { animation:none; } }
+/* tutorial step one: the prompt sits above the real board, so the board stays visible */
+#mpbar.tutbar { font-size:15px; font-weight:800; color:var(--fg); padding:7px 0;
+  align-items:center; justify-content:center; gap:11px; }
+#mpbar.tutbar kbd { font-size:15px; padding:4px 10px; }
+#mpbar.tutbar em { font-style:normal; font-size:11px; font-weight:500; color:var(--dim); }
+#mpbar.tutbar .tdots { display:inline-flex; gap:5px; }
+#mpbar.tutbar .tdots i { width:7px; height:7px; border-radius:50%; background:#2a3542; }
+#mpbar.tutbar .tdots i.on { background:var(--good); }
+@media (max-width: 620px) { #mpbar.tutbar { font-size:13px; gap:7px; } #mpbar.tutbar em { display:none; } }
 /* the opponent, before both sides have readied up */
 /* the moment somebody turns up: it used to look exactly like the idle screen */
 .foundbar { display:flex; flex-direction:column; align-items:center; gap:3px; margin-bottom:4px;
