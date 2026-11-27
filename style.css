@@ -55,6 +55,10 @@ button:disabled { opacity:.45; cursor:default; }
 #lb .tabs button { flex:1; padding:4px 0; font-size:11px; font-weight:800; color:var(--dim); border-radius:6px; }
 #lb .tabs button.on { color:#06111a; background:var(--acc); border-color:var(--acc); }
 #lb ol { margin:0; padding-left:22px; max-height:130px; overflow:auto; }
+/* the home widget shows the same numbered rows as the full board, just tighter */
+#lb ol.bb { padding-left:0; max-height:208px; gap:2px; }
+#lb ol.bb li { padding:4px 7px; font-size:12px; gap:7px; }
+#lb ol.bb li .rk { min-width:30px; font-size:10px; }
 #lb li { display:flex; justify-content:space-between; gap:8px; color:var(--fg); }
 #lb li.me { color:var(--acc); font-weight:800; }
 #lb .empty { color:var(--dim); }
@@ -544,6 +548,20 @@ ol.bb li.me .rk { color:var(--acc); }
 
 .friends .reqs { border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:5px; padding-bottom:4px; }
 .friends .acc { color:var(--good); border-color:rgba(74,222,128,.45); }
+/* a friend request waiting on you: red, and it moves, because the quiet green
+   count beside the button was being walked straight past */
+.alert { display:inline-flex; align-items:center; justify-content:center;
+  width:18px; height:18px; margin-left:7px; border-radius:50%;
+  background:var(--bad); color:#fff; font-size:12px; font-weight:900; line-height:1;
+  box-shadow:0 0 10px rgba(255,92,108,.65);
+  animation:alertpulse 1.4s ease-in-out infinite; }
+@keyframes alertpulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.18); } }
+@media (prefers-reduced-motion: reduce) { .alert { animation:none; } }
+/* the requester's own box, inside the narrow friends panel */
+.friends .freq { padding:7px 0; border-top:1px solid rgba(255,255,255,.06); }
+.friends .freq:first-of-type { border-top:0; padding-top:0; }
+.friends .freq .slot { margin-bottom:6px; min-height:0; }
+.friends .freqbtns { display:flex; gap:6px; }
 
 .bnpicks { display:flex; flex-wrap:wrap; gap:5px; padding:3px 0 6px; }
 .bnpick { border-radius:20px; }
