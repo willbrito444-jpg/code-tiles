@@ -1599,7 +1599,7 @@ const TUT = {
   },
   // the freeze is shown rather than described: the real overlay, on the real board
   frozen() {
-    tiles = [1, 0, 2]; offset = 0; wrongLane = 2; freeze = 1.7;
+    tiles = [1, 0, 2]; offset = 0; wrongLane = 2; freeze = 2.9;
     this.say('Wrong key, <span class="ice">frozen</span>', 'so aim — do not hammer');
     beep(110, .3, 'sawtooth', .1);
     this._t = performance.now();
@@ -1610,12 +1610,23 @@ const TUT = {
       freeze -= dt;
       if (freeze > 0) { draw(); return requestAnimationFrame(step); }
       freeze = 0; wrongLane = -1; draw();
-      this.say('Hit as many as you can', '10 seconds · the clock starts on your first key');
-      setTimeout(() => { if (TUTOR) this.go(); }, 1900);
+      this.go();
     };
     requestAnimationFrame(step);
   },
-  go() { setMode(10); $('hud').classList.add('tut'); startRun({ onEnd: s => { $('hud').classList.remove('tut'); this.solo = s; this.board(); } }); },
+  // the prompt sits over the board while the clock is still waiting, and takes itself
+  // away the moment the first tile goes down. no screen in between to read and dismiss.
+  go() {
+    setMode(10); $('hud').classList.add('tut');
+    startRun({ onEnd: s => { $('hud').classList.remove('tut'); this.solo = s; this.board(); } });
+    this.say('Hit as many tiles as you can', '10 seconds');
+    const watch = () => {
+      if (!TUTOR) return;
+      if (started || !running) { msg.style.display = 'none'; msg.className = ''; return; }
+      requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
+  },
 
   // ---- where a score lands. the names are built around theirs, so there is always
   // somebody above to climb past, which is the whole point of showing it.
