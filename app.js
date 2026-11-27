@@ -314,12 +314,12 @@ function renderLb() {
   const req = ++lbReq, mode = DURATION, tab = lbTab;
   fetchBoard(mode, tab).then(rows => {
     if (req !== lbReq) return; const b = $('lbbody'); if (!b) return;
-    const top = rows.filter(r => r.rnk <= 10), mine = rows.find(r => r.mine);
+    const top = rows.filter(r => r.rnk <= 100), mine = rows.find(r => r.mine);
     b.innerHTML = (top.length
-      ? '<ol>' + top.map(r => '<li' + (r.mine ? ' class="me"' : '') + '><span>' + esc((r.username || 'anon').slice(0, 16)) + '</span><b>' + (r.best | 0) + '</b></li>').join('') + '</ol>'
+      ? '<ol class="bb">' + top.map(bbRow).join('') + '</ol>'
       : '<div class="empty">' + NOSCORES(tab) + '</div>')
-      + (mine && mine.rnk > 10
-        ? '<div class="lbgap">⋯</div><div class="myrank"><span class="rk">#' + mine.rnk + '</span><span class="nm">' + esc(mine.username || '') + '</span><b>' + (mine.best | 0) + '</b></div>'
+      + (mine && mine.rnk > 100
+        ? '<div class="lbgap">⋯</div><ol class="bb pinned">' + bbRow(mine) + '</ol>'
         : '');
   }).catch(() => { const b = $('lbbody'); if (b) b.innerHTML = '<div class="empty">couldn\'t load the board</div>'; });
 }
@@ -335,7 +335,7 @@ function boardScreen(mode, tab) {
   running = false; $('mpbar').style.display = 'none';
   const modes = [10, 20, 30].map(m => '<button class="ghost fmtbtn' + (bsMode === m ? ' on' : '') + '" data-bm="' + m + '">' + MODE_ICON[m] + ' ' + m + 's</button>').join('');
   const tabs = [['day', 'today'], ['week', 'this week'], ['all', 'all time']].map(t => '<button class="ghost fmtbtn' + (bsTab === t[0] ? ' on' : '') + '" data-bt="' + t[0] + '">' + t[1] + '</button>').join('');
-  show('<h1>Leaderboard</h1><p class="tag">top 100 runs · every game you log can place</p>' +
+  show('<h1>Leaderboard</h1><p class="tag">top 100 players · your best run in each mode counts</p>' +
     '<div class="row">' + modes + '</div><div class="row">' + tabs + '</div>' +
     '<div id="bigboard"><div class="waiting">loading…</div></div>' +
     '<button class="ghost" id="bk">Back</button>', true);
@@ -405,12 +405,38 @@ async function declineRequest(id, dir) {
   await fetch(SUPABASE.url + '/rest/v1/friend_requests?' + q, { method: 'DELETE', headers: headers() });
 }
 async function removeFriend(id) { await rpc('remove_friend', { other: id }); }
+// banners for the people asking to be friends. keyed on the set of ids, so the
+// re-render this triggers cannot loop: the second pass finds the key unchanged.
+let fcards = { skins: {}, banners: {} }, fcardKey = '';
+async function loadFriendCards(inLobby) {
+  const ids = [...new Set(reqs.filter(r => r.direction === 'in').map(r => r.other_id))];
+  if (!ids.length) { fcardKey = ''; return; }
+  const key = ids.slice().sort().join(',');
+  if (fcardKey === key) return;
+  fcardKey = key;
+  try {
+    const [stats, profs] = await Promise.all([
+      fetchStats(ids),
+      fetch(SUPABASE.url + '/rest/v1/profiles?select=id,shown,banner,world&id=in.(' + ids.join(',') + ')', { headers: headers() }).then(r => r.ok ? r.json() : [])
+    ]);
+    const shownBy = {}, wearing = {}, worldBy = {};
+    profs.forEach(x => { shownBy[x.id] = x.shown; wearing[x.id] = x.banner || 'none'; worldBy[x.id] = x.world; });
+    ids.forEach(id => {
+      fcards.banners[id] = visibleBadges(earnedBanners(stats[id], false), shownBy[id], worldBy[id]);
+      fcards.skins[id] = pickSkin(stats[id], wearing[id], worldBy[id]);
+    });
+    if ($('fr')) refreshFriends(inLobby);
+  } catch (e) { fcardKey = ''; }
+}
 function FRIENDS_HTML(inLobby) {
   const incoming = reqs.filter(r => r.direction === 'in'), outgoing = reqs.filter(r => r.direction === 'out');
+  // the request shows who is asking, banner and badges and all: the same box they
+  // would sit behind in a lobby, so you can see who you are agreeing to play
   const reqHtml = incoming.length ? '<div class="reqs">' + incoming.map(r =>
-    '<div class="f"><div class="n">' + esc(r.username) + '</div>' +
-    '<button class="small acc" data-acc="' + r.other_id + '">accept</button>' +
-    '<button class="small" data-dec="' + r.other_id + '">\u00d7</button></div>').join('') + '</div>' : '';
+    '<div class="freq">' +
+    playerCardHTML(r.username, fcards.skins[r.other_id], fcards.banners[r.other_id], false, null) +
+    '<div class="freqbtns"><button class="small acc" data-acc="' + r.other_id + '">accept</button>' +
+    '<button class="small" data-dec="' + r.other_id + '">decline</button></div></div>').join('') + '</div>' : '';
   const list = friends.length ? friends.map(f => {
     const on = online.has(f.id);
     return '<div class="f"><div class="dot' + (on ? ' on' : '') + '"></div><div class="n">' + esc(f.username) + '</div>' +
@@ -426,6 +452,7 @@ function FRIENDS_HTML(inLobby) {
     '<div class="addrow"><input id="fadd" maxlength="16" placeholder="REQUEST BY USERNAME" class="uc"><button class="small" id="fgo">send</button></div><div id="ferr"></div></div>';
 }
 function bindFriends(inLobby) {
+  loadFriendCards(inLobby);
   const go = $('fgo'), inp = $('fadd');
   if (go) go.onclick = async () => {
     const n = (inp.value || '').trim().toUpperCase(); if (!n) return;
@@ -802,7 +829,7 @@ function home() {
     '<div class="row"><button class="primary" id="go">Start</button><button class="ghost" id="mp">\ud83c\udfdf\ufe0f Join / create a lobby</button></div>' +
     '<div class="row"><button class="ghost" id="duel">\ud83e\udd4a 1v1</button><button class="ghost" id="duel2">\u2694\uFE0F 2v2</button></div>' +
     '<div class="row"><button class="ghost" id="sett">\u2699\uFE0F Settings</button><button class="ghost" id="frs">\uD83D\uDC65 Friends' +
-      (reqs.filter(r => r.direction === 'in').length ? ' <span class="rdy y">' + reqs.filter(r => r.direction === 'in').length + '</span>' : '') + '</button></div>' +
+      (reqs.filter(r => r.direction === 'in').length ? '<span class="alert">!</span>' : '') + '</button></div>' +
     KEYS_HTML() + LB_HTML() +
     '<p>Signed in as <b>' + esc(me ? me.username : '') + '</b> \u00b7 <a href="#" id="out" style="color:var(--dim)">sign out</a><br>' +
     'A wrong key <b style="color:#bfe8ff">freezes you</b>: 0.5s / 1s / 1s \u00b7 <kbd>Space</kbd> start \u00b7 <kbd>R</kbd> restart \u00b7 <kbd>Esc</kbd> home<br>' +
