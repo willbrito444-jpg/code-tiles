@@ -396,7 +396,8 @@ let friends = [], online = new Set(), reqs = [];
 // the preview exists so the duel screens can be driven by one person. these three
 // stand in for a friends list: they accept instantly and play as bots afterwards.
 const PREVIEW = /[?&]preview\b/.test(location.search);
-const DEMO_FRIENDS = [{ id: 'demo-ava', username: 'AVA' }, { id: 'demo-rook', username: 'ROOK' }, { id: 'demo-pixel', username: 'PIXEL' }];
+const DEMO_FRIENDS = [{ id: 'demo-ava', username: 'AVA', act: 'yes' },
+  { id: 'demo-rook', username: 'ROOK', act: 'no' }, { id: 'demo-pixel', username: 'PIXEL', act: 'wait' }];
 const DEMO_BADGE = [{ id: 'demo', rar: 'common', label: 'stand-in \uD83E\uDD16' }];
 function seedDemoFriends() {
   if (!PREVIEW) return;
@@ -833,6 +834,7 @@ function startPresence() {
     .on('broadcast', { event: 'friendreq' }, ({ payload }) => toastMsg((payload && payload.from ? payload.from : 'Someone') + ' sent you a friend request'))
     .on('broadcast', { event: 'friendok' }, ({ payload }) => toastMsg((payload && payload.from ? payload.from : 'Someone') + ' accepted your friend request'))
     .on('broadcast', { event: 'teaminv' }, ({ payload }) => toastTeam(payload))
+    .on('broadcast', { event: 'teamno' }, ({ payload }) => MP.mateDeclined(payload))
     .subscribe();
 }
 async function toastMsg(text) {
@@ -865,7 +867,8 @@ function toastTeam(p) {
     MP.duel(2);
     MP.duoJoin(p.party, false);
   };
-  d.querySelector('[data-x]').onclick = () => d.remove();
+  // saying no clears the hologram on their screen instead of leaving it to time out
+  d.querySelector('[data-x]').onclick = () => { d.remove(); pingUser(p.pid, 'teamno', { pid: me.id }); };
   setTimeout(() => d.remove(), 30000);
 }
 function toastInvite(p) {
@@ -1191,7 +1194,7 @@ const MP = {
     // show them in the slot they will play in rather than "no teammate yet"
     const mateSlot = (!seated && this.mate)
       ? playerCardHTML(this.mate.name, (this.mateCard || {}).skin, (this.mateCard || {}).badges, false, null, this.mate.id)
-      : '';
+      : (!seated && this.mateAsked && n > 1 && state === 'idle') ? this.pendSlot() : '';
     const left = (seated ? us.map(card).join('')
       : playerCardHTML(me.username, pickSkin(myStats, myBanner, myWorld), visibleBadges(earnedBanners(myStats, true), myShown, myWorld), true, null, me.id) + mateSlot) +
       this.emptySlots(n - (seated ? us.length : 1 + (mateSlot ? 1 : 0)), state, 'teammate');
@@ -1206,9 +1209,48 @@ const MP = {
     return '<div class="duel"><div class="dside">' + left + '</div><div class="vs">VS</div><div class="dside">' + right + '</div></div>';
   },
   emptySlots(k, state, who) {
-    return k <= 0 ? '' : Array(k).fill(state === 'searching'
-      ? '<div class="slot empty searching">searching\u2026</div>'
-      : '<div class="slot empty">no ' + who + ' yet</div>').join('');
+    if (k <= 0) return '';
+    if (state === 'searching') return Array(k).fill('<div class="slot empty searching">searching\u2026</div>').join('');
+    const plain = n => Array(n).fill('<div class="slot empty">no ' + who + ' yet</div>').join('');
+    // the invite lives in the seat it would fill: a strip above the boxes is
+    // where people were not looking, which is why nobody found it
+    if (!(state === 'idle' && who === 'teammate' && (this.duelTeam || 1) > 1)) return plain(k);
+    return '<div class="slot empty open"><button class="small ivbtn" id="mateinv">+ Invite friend</button>' +
+      '<span class="ivor">or find players for a random one</span></div>' + plain(k - 1);
+  },
+  // their real box, held as a hologram until they answer
+  pendSlot() {
+    const a = this.mateAsked, c = this.mateCardId === a.id ? (this.mateCard || {}) : {};
+    return '<div class="pending">' + playerCardHTML(a.name, c.skin, c.badges, false, null, null) +
+      '<div class="pwait"><span>invited \u00b7 <b id="ivsec">30</b>s</span>' +
+      '<button class="small" id="ivx">\u00d7 cancel invite</button></div></div>';
+  },
+  // the whole friends list, one tap each. offline friends are shown but not
+  // tappable: the invite reaches a connected client only
+  matePicker() {
+    const old = $('mpick'); if (old) old.remove();
+    const d = document.createElement('div');
+    d.id = 'mpick';
+    const sorted = friends.slice().sort((a, b) => (online.has(b.id) ? 1 : 0) - (online.has(a.id) ? 1 : 0));
+    const hint = f => PREVIEW && f.act ? '<span class="mphint">' +
+      (f.act === 'yes' ? 'accepts' : f.act === 'no' ? 'declines' : 'no answer') + '</span>' : '';
+    const body = !friends.length
+      ? '<p class="mpnone">No friends yet \u2014 add one, or just find players and take a random teammate.</p>' +
+        '<button class="small" id="mpfr">Add friends</button>'
+      : '<ul class="mplist">' + sorted.map(f => '<li><span class="mpn">' + esc(f.username) + '</span>' + hint(f) +
+          (online.has(f.id)
+            ? '<button class="small ivbtn" data-pmate="' + f.id + '" data-pmn="' + esc(f.username) + '">invite</button>'
+            : '<span class="mpoff">offline</span>') + '</li>').join('') + '</ul>';
+    d.innerHTML = '<div class="mpbox"><div class="mphead"><b>Invite a teammate</b>' +
+      '<button class="small" id="mpx">\u00d7</button></div>' + body + '</div>';
+    document.body.appendChild(d);
+    const close = () => d.remove();
+    d.onclick = e => { if (e.target === d) close(); };
+    $('mpx').onclick = close;
+    const fr = $('mpfr'); if (fr) fr.onclick = () => { close(); this.clearParty(); this.leave(); friendsScreen(); };
+    d.querySelectorAll('[data-pmate]').forEach(b => b.onclick = () => {
+      close(); this.askMate(b.dataset.pmate, b.dataset.pmn);
+    });
   },
   renderDuel(state, err) {
     const modes = [10, 20, 30].map(m => '<button class="ghost fmtbtn' + (this.duelMode === m ? ' on' : '') + '" data-dm="' + m + '"' + (state === 'idle' ? '' : ' disabled') + '>' + MODE_ICON[m] + ' ' + m + 's</button>').join('');
@@ -1240,9 +1282,9 @@ const MP = {
     $('bk').onclick = () => { this.qmStop(); this.clearParty(); this.leave(); PREVIEW ? practiceMenu() : home(); };
     document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => { this.duelMode = +b.dataset.dm; this.renderDuel('idle'); });
     const f = $('dfind'); if (f) f.onclick = () => this.search();
-    document.querySelectorAll('[data-mate]').forEach(b => b.onclick = () => this.askMate(b.dataset.mate, b.dataset.mn));
+    const mi = $('mateinv'); if (mi) mi.onclick = () => this.matePicker();
+    const ix = $('ivx'); if (ix) ix.onclick = () => this.inviteOver('');
     const mo = $('mateoff'); if (mo) mo.onclick = () => { this.clearParty(); this.renderDuel('idle'); };
-    const mf = $('matefr'); if (mf) mf.onclick = () => { this.clearParty(); this.leave(); friendsScreen(); };
     const c = $('dcan'); if (c) c.onclick = () => { this.qmStop(); this.renderDuel('idle'); };
     const r = $('rdy'); if (r) r.onclick = () => this.setReady(!this.ready);
     if (state === 'found') {
@@ -1261,6 +1303,7 @@ const MP = {
   // matchmaker keeps you together and fills the other side with whoever is waiting.
   party: null, mate: null, mateAsked: null, duoCh: null, duoHost: false, mateCard: null, mateCardId: '',
   clearParty() {
+    this.ivStop();
     if (this.duoCh) { try { this.duoCh.send({ type: 'broadcast', event: 'bye', payload: {} }); } catch (e) {} }
     this.duoLeave();
     this.party = null; this.mate = null; this.mateAsked = null; this.mateCard = null; this.mateCardId = '';
@@ -1280,7 +1323,7 @@ const MP = {
         const other = list.find(x => x.pid !== me.id);
         const had = !!this.mate;
         this.mate = other ? { id: other.pid, name: other.name } : null;
-        if (other) { this.mateAsked = null; this.loadMateCard(); }
+        if (other) { this.ivStop(); this.mateAsked = null; this.loadMateCard(); }
         else if (had) { this.mateCard = null; this.mateCardId = ''; toastMsg('your teammate left'); }
         if ($('dfind')) this.renderDuel('idle');
       })
@@ -1295,8 +1338,8 @@ const MP = {
     if (this.duoCh) { try { this.duoCh.unsubscribe(); } catch (e) {} this.duoCh = null; }
     this.duoHost = false;
   },
-  async loadMateCard() {
-    const id = this.mate && this.mate.id;
+  async loadMateCard(who) {
+    const id = who || (this.mate && this.mate.id);
     if (!id || this.mateCardId === id) return;
     this.mateCardId = id;
     try {
@@ -1314,19 +1357,26 @@ const MP = {
     if ((this.duelTeam || 1) < 2) return '';
     if (this.mate) return '<div class="mate ok"><span class="k">YOUR TEAM</span><b>you and ' + esc(this.mate.name) +
       '</b><button class="small" id="mateoff">leave team</button></div>';
-    if (this.mateAsked) return '<div class="mate"><span class="k">INVITED</span><b>' + esc(this.mateAsked.name) +
-      '</b><button class="small" id="mateoff">cancel</button>' +
-      '<span class="note">waiting for them to accept\u2026</span></div>';
-    // every friend is listed, not just the ones online: an empty strip tells you
-    // nothing, and "offline" tells you exactly why you cannot tap them yet
-    if (!friends.length) return '<div class="mate"><span class="k">INVITE A TEAMMATE</span>' +
-      '<button class="small" id="matefr">Add friends</button>' +
-      '<span class="note">a teammate has to be a friend first \u00b7 or just find players and take a random one</span></div>';
-    const sorted = friends.slice().sort((a, b) => (online.has(b.id) ? 1 : 0) - (online.has(a.id) ? 1 : 0));
-    return '<div class="mate"><span class="k">INVITE A TEAMMATE</span>' + sorted.slice(0, 5).map(f => online.has(f.id)
-      ? '<button class="small" data-mate="' + f.id + '" data-mn="' + esc(f.username) + '">' + esc(f.username) + '</button>'
-      : '<button class="small off" disabled>' + esc(f.username) + ' \u00b7 offline</button>').join('') +
-      '<span class="note">' + (friends.some(f => online.has(f.id)) ? 'or just find players and take a random one' : 'nobody is online \u2014 find players and take a random one') + '</span></div>';
+    // nothing else here: the empty seat holds the invite button, and an invite
+    // in flight is the hologram in that seat
+    return '';
+  },
+  ivStop() { if (this._ivT) { clearInterval(this._ivT); this._ivT = null; } this._ivEnd = 0; },
+  // the seat opens again and you are told why
+  inviteOver(why) {
+    this.ivStop(); this.clearParty();
+    if (why) toastMsg(why);
+    if ($('dfind')) this.renderDuel('idle');
+  },
+  mateDeclined(p) {
+    if (!this.mateAsked) return;
+    if (p && p.pid && p.pid !== this.mateAsked.id) return;  // a stale no from an older invite
+    this.inviteOver(this.mateAsked.name + ' said no thanks');
+  },
+  mateAccepted(id, name) {
+    if (!this.mateAsked || this.mateAsked.id !== id) return;
+    this.ivStop(); this.mate = { id: id, name: name }; this.mateAsked = null;
+    if ($('dfind')) this.renderDuel('idle');
   },
   askMate(id, name) {
     // the column is a uuid, so the fallback has to be uuid-shaped, not merely unique
@@ -1336,11 +1386,24 @@ const MP = {
           return (ch === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
         });
     this.mateAsked = { id: id, name: name };
+    // 30 seconds to answer, counted down in the seat, then the invite lapses
+    this.ivStop();
+    this._ivEnd = Date.now() + 30000;
+    this._ivT = setInterval(() => {
+      if (!this.mateAsked || this.mate) return this.ivStop();
+      const left = Math.ceil((this._ivEnd - Date.now()) / 1000);
+      if (left <= 0) return this.inviteOver(this.mateAsked.name + ' did not answer');
+      const s = $('ivsec'); if (s) s.textContent = left;
+    }, 400);
     if (PREVIEW && String(id).indexOf('demo-') === 0) {
-      this.mate = { id: id, name: name }; this.mateAsked = null;
+      const dm = DEMO_FRIENDS.filter(f => f.id === id)[0] || {};
       this.mateCardId = id; this.mateCard = { skin: null, badges: DEMO_BADGE };
-      return this.renderDuel('idle');
+      this.renderDuel('idle');
+      if (dm.act === 'yes') setTimeout(() => this.mateAccepted(id, name), 2800);
+      else if (dm.act === 'no') setTimeout(() => this.mateDeclined({ pid: id }), 2800);
+      return;
     }
+    this.loadMateCard(id);
     this.duoJoin(this.party, true);
     pingUser(id, 'teaminv', { party: this.party, pid: me.id });
     this.renderDuel('idle');
