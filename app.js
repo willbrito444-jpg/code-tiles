@@ -1232,6 +1232,7 @@ const MP = {
     const f = $('dfind'); if (f) f.onclick = () => this.search();
     document.querySelectorAll('[data-mate]').forEach(b => b.onclick = () => this.askMate(b.dataset.mate, b.dataset.mn));
     const mo = $('mateoff'); if (mo) mo.onclick = () => { this.clearParty(); this.renderDuel('idle'); };
+    const mf = $('matefr'); if (mf) mf.onclick = () => { this.clearParty(); this.leave(); friendsScreen(); };
     const c = $('dcan'); if (c) c.onclick = () => { this.qmStop(); this.renderDuel('idle'); };
     const r = $('rdy'); if (r) r.onclick = () => this.setReady(!this.ready);
     if (state === 'found') {
@@ -1306,13 +1307,16 @@ const MP = {
     if (this.mateAsked) return '<div class="mate"><span class="k">INVITED</span><b>' + esc(this.mateAsked.name) +
       '</b><button class="small" id="mateoff">cancel</button>' +
       '<span class="note">waiting for them to accept\u2026</span></div>';
-    const on = friends.filter(f => online.has(f.id));
-    if (!on.length) return '<div class="mate none">' +
-      (friends.length ? 'no friends online right now' : 'add friends to invite a teammate') +
-      ' \u00b7 find players and you get a random one</div>';
-    return '<div class="mate"><span class="k">INVITE A TEAMMATE</span>' + on.slice(0, 4).map(f =>
-      '<button class="small" data-mate="' + f.id + '" data-mn="' + esc(f.username) + '">' + esc(f.username) + '</button>').join('') +
-      '<span class="note">or just find players and take a random one</span></div>';
+    // every friend is listed, not just the ones online: an empty strip tells you
+    // nothing, and "offline" tells you exactly why you cannot tap them yet
+    if (!friends.length) return '<div class="mate"><span class="k">INVITE A TEAMMATE</span>' +
+      '<button class="small" id="matefr">Add friends</button>' +
+      '<span class="note">a teammate has to be a friend first \u00b7 or just find players and take a random one</span></div>';
+    const sorted = friends.slice().sort((a, b) => (online.has(b.id) ? 1 : 0) - (online.has(a.id) ? 1 : 0));
+    return '<div class="mate"><span class="k">INVITE A TEAMMATE</span>' + sorted.slice(0, 5).map(f => online.has(f.id)
+      ? '<button class="small" data-mate="' + f.id + '" data-mn="' + esc(f.username) + '">' + esc(f.username) + '</button>'
+      : '<button class="small off" disabled>' + esc(f.username) + ' \u00b7 offline</button>').join('') +
+      '<span class="note">' + (friends.some(f => online.has(f.id)) ? 'or just find players and take a random one' : 'nobody is online \u2014 find players and take a random one') + '</span></div>';
   },
   askMate(id, name) {
     // the column is a uuid, so the fallback has to be uuid-shaped, not merely unique
